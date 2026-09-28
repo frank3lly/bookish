@@ -15,17 +15,151 @@ log = logging.getLogger(__name__)
 
 _YT_ID_RE = re.compile(r'(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})')
 
+def extract_docx_text(file_path):
+    """
+    Extracts text paragraphs and table cell content from a Word .docx document.
+    Uses only Python stdlib (zipfile + xml.etree.ElementTree). Zero external deps.
+    """
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    try:
+        with zipfile.ZipFile(file_path) as z:
+            xml_content = z.read("word/document.xml")
+        tree = ET.fromstring(xml_content)
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        paragraphs = []
+        for p in tree.iterfind(".//w:p", ns):
+            texts = [t.text for t in p.iterfind(".//w:t", ns) if t.text]
+            if texts:
+                paragraphs.append("".join(texts))
+        return "\n".join(paragraphs).strip()
+    except Exception as e:
+        log.warning(f"Failed to extract DOCX text from '{file_path}': {e}")
+        return ""
+
+
+def extract_xlsx_text(file_path):
+    """
+    Extracts sheet data from an Excel .xlsx spreadsheet as pipe-delimited text.
+    Uses only Python stdlib (zipfile + xml.etree.ElementTree). Zero external deps.
+    Reads shared strings table and all worksheet cell grids.
+    """
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    try:
+        with zipfile.ZipFile(file_path) as z:
+            # 1. Read shared strings if present
+            shared_strings = []
+            if "xl/sharedStrings.xml" in z.namelist():
+                ss_tree = ET.fromstring(z.read("xl/sharedStrings.xml"))
+                ns = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+                for si in ss_tree.iterfind(".//main:si", ns):
+                    texts = [t.text for t in si.iterfind(".//main:t", ns) if t.text]
+                    shared_strings.append("".join(texts))
+
+            # 2. Read each worksheet
+            sheet_files = sorted(
+                [n for n in z.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
+            )
+            ns = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+            sheets_text = []
+            for idx, s_file in enumerate(sheet_files, 1):
+                s_tree = ET.fromstring(z.read(s_file))
+                rows = []
+                for row in s_tree.iterfind(".//main:row", ns):
+                    row_vals = []
+                    for c in row.iterfind(".//main:c", ns):
+                        cell_type = c.get("t")
+                        val_el = c.find("main:v", ns)
+                        val = val_el.text if val_el is not None and val_el.text is not None else ""
+                        # Resolve shared string references
+                        if cell_type == "s" and val.isdigit():
+                            i = int(val)
+                            val = shared_strings[i] if i < len(shared_strings) else val
+                        if val.strip():
+                            row_vals.append(val.strip())
+                    if row_vals:
+                        rows.append(" | ".join(row_vals))
+                if rows:
+                    sheets_text.append(f"--- [Hoja {idx}] ---\n" + "\n".join(rows))
+            return "\n\n".join(sheets_text).strip()
+    except Exception as e:
+        log.warning(f"Failed to extract XLSX text from '{file_path}': {e}")
+        return ""
+
+
+def _detect_office_type(file_path):
+    """
+    Detect file type via magic bytes for files with missing/mangled extensions.
+    Returns '.docx', '.xlsx', or None.
+    """
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(4)
+        if header != b"PK\x03\x04":
+            return None
+        # It's a ZIP -- check internal structure
+        import zipfile
+        with zipfile.ZipFile(file_path) as z:
+            names = z.namelist()
+            if "word/document.xml" in names:
+                return ".docx"
+            if any(n.startswith("xl/worksheets/") for n in names):
+                return ".xlsx"
+    except Exception:
+        pass
+    return None
+
+
 def extract_attachment_text(file_path):
     """
-    Extracts text from PDF or image files using PyMuPDF (fitz) with OCR fallback.
+    Extracts text from attachment files: PDF, images (OCR), Word (.docx),
+    Excel (.xlsx), and plain text (.txt).
+    For files with missing extensions, inspects magic bytes to detect type.
     """
     if not os.path.exists(file_path):
         return ""
 
     ext = os.path.splitext(file_path)[1].lower()
+
+    # If no extension (or dot was stripped), try magic byte detection
+    if not ext or ext not in (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".docx", ".xlsx", ".xls", ".txt"):
+        detected = _detect_office_type(file_path)
+        if detected:
+            ext = detected
+        elif file_path.lower().endswith("docx"):
+            ext = ".docx"
+        elif file_path.lower().endswith("xlsx"):
+            ext = ".xlsx"
+        elif file_path.lower().endswith("pdf"):
+            ext = ".pdf"
+        elif file_path.lower().endswith("txt"):
+            ext = ".txt"
+
     text_content = []
 
-    if ext == ".pdf":
+    if ext == ".docx":
+        result = extract_docx_text(file_path)
+        if result:
+            text_content.append(result)
+
+    elif ext in (".xlsx", ".xls"):
+        result = extract_xlsx_text(file_path)
+        if result:
+            text_content.append(result)
+
+    elif ext == ".txt":
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                txt = f.read().strip()
+            if txt:
+                text_content.append(txt)
+        except OSError as e:
+            log.warning(f"Failed to read text file '{file_path}': {e}")
+
+    elif ext == ".pdf":
         import pymupdf
         import pytesseract
         from PIL import Image
@@ -49,7 +183,8 @@ def extract_attachment_text(file_path):
             doc.close()
         except Exception as e:
             log.warning(f"Failed to extract PDF text from '{file_path}': {e}")
-    elif ext in [".png", ".jpg", ".jpeg", ".webp"]:
+
+    elif ext in (".png", ".jpg", ".jpeg", ".webp"):
         import pytesseract
         from PIL import Image, UnidentifiedImageError
         try:
@@ -335,21 +470,38 @@ def get_assignment_details(page, assignment_url, fallback_title="Crea un titulo 
                 file_name = href.split("/")[-1].split("?")[0]
 
             ext = os.path.splitext(file_name)[1].lower()
-            if ext not in [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".docx", ".txt"]:
+            if ext not in (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".docx", ".xlsx", ".xls", ".txt"):
                 continue
 
             downloaded_urls.add(href)
 
-            clean_filename = sanitize_filename(file_name)
-            if not clean_filename:
-                clean_filename = f"attachment_{int(time.time())}{ext}"
+            # Preserve extension dot: sanitize only the basename, then reattach ext
+            name_base = os.path.splitext(file_name)[0]
+            clean_base = sanitize_filename(name_base)
+            if not clean_base:
+                clean_base = f"attachment_{int(time.time())}"
+            clean_filename = f"{clean_base}{ext}"
             attachment_file = os.path.join(ATTACHMENTS_DIR, clean_filename)
 
-            res = page.context.request.get(href)
-            if res.status == 200:
-                with open(attachment_file, "wb") as f:
-                    f.write(res.body())
+            # Download with retry logic (handles socket hang ups, timeouts)
+            max_retries = 3
+            downloaded = False
+            for attempt in range(max_retries):
+                try:
+                    res = page.context.request.get(href, timeout=30000)
+                    if res.status == 200:
+                        with open(attachment_file, "wb") as f:
+                            f.write(res.body())
+                        downloaded = True
+                        break
+                    else:
+                        log.warning(f"Attachment download returned status {res.status} for '{clean_filename}' (attempt {attempt + 1}/{max_retries})")
+                except Exception as dl_err:
+                    log.warning(f"Attachment download failed for '{clean_filename}' (attempt {attempt + 1}/{max_retries}): {dl_err}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 * (2 ** attempt))  # 2s, 4s backoff
 
+            if downloaded:
                 extracted = extract_attachment_text(attachment_file)
                 if extracted:
                     line_count = len(extracted.splitlines())
@@ -359,6 +511,8 @@ def get_assignment_details(page, assignment_url, fallback_title="Crea un titulo 
                         f"[FIN ADJUNTO: {clean_filename}]\n"
                     )
                     description += attachment_block
+            else:
+                log.warning(f"Failed to download attachment '{clean_filename}' after {max_retries} attempts, skipping.")
     except PlaywrightError as e:
         log.warning(f"Error extracting attachments for assignment: {e}")
     except OSError as e:

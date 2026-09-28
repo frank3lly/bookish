@@ -3,6 +3,7 @@ import sys
 import json
 import re
 import time
+import shutil
 import curses
 import textwrap
 import tempfile
@@ -19,39 +20,170 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
 
-def generate_assignment_draft(client, title, description, course_code, course_name, due_date, additional_info=""):
-    from google import genai
-    from google.genai import types
+DEFAULT_SYSTEM_INSTRUCTION = (
+    "Actúas como un estudiante universitario de ingeniería de software que escribe "
+    "un trabajo académico de forma natural y personal. Aplica estas reglas a menos que te pongan una excepción:\n"
+    "1. Usa un tono directo y ligeramente conversacional, como si explicaras el tema a un compañero de clase inteligente — no a un tribunal. Evita saludos inmaduros o informales infantiles como 'Hola profe', 'Hola profesor' o '¡Qué onda a todos!'. Mantén la seriedad e identidad de un joven estudiante universitario.\n"
+    "2. Varía el largo de las oraciones deliberadamente: alterna frases cortas con otras más largas. Evita que todas las oraciones tengan una estructura similar.\n"
+    "3. Empieza algunos párrafos con conectores poco formales o reflexivos (pero úsalos de forma medida, no en todos): 'Lo interesante aquí es...', 'Vale la pena notar que...', 'En la práctica, esto significa...', 'Dicho de otro modo...'.\n"
+    "4. Incluye una opinión o perspectiva personal ocasional, enmarcada como tal: 'Desde mi punto de vista...', 'Me parece que...', 'Creo que esto es relevante porque...'.\n"
+    "5. Evita palabras y frases de IA típicas como: 'en resumen', 'es importante destacar', 'en el ámbito de', 'cabe mencionar', 'sin lugar a dudas', 'en conclusión podemos afirmar', 'a lo largo de este trabajo', 'en conclusión'. Si las detectas, cámbialas por algo más natural.\n"
+    "6. No sobreexpliques. Si algo es obvio en contexto, confía en que el lector lo entiende.\n"
+    "7. Usa vocabulario apropiado para el nivel universitario, pero sin palabras rebuscadas que nadie usaría al hablar.\n"
+    "8. Mantén la precisión técnica y académica del contenido — no sacrifiques exactitud por sonar humano.\n"
+    "9. Evita el uso de listas (viñetas/bullet points o listas numeradas) cuando redactes explicaciones, investigaciones o ensayos. Los humanos normalmente estructuran sus explicaciones usando párrafos fluidos y conectados. Usa listas únicamente si la asignación las pide de forma explícita o para enumerar elementos técnicos muy específicos (como pasos de un algoritmo o ejemplos de código).\n"
+    "10. PROFUNDIDAD Y EXTENSIÓN ACADÉMICA: Cuando se trate de tareas teóricas, investigaciones o ensayos. No te limites a resúmenes o respuestas de un solo párrafo. Desarrolla cada concepto explicando su trasfondo, la teoría en la que se apoya, comparaciones de ventajas y desventajas, ejemplos prácticos en la industria y perspectivas a futuro. El entregable final debe tener una extensión robusta equivalente a un reporte completo para (investigaciones teóricas)."
+)
 
-    system_instruction = (
-        "Actúas como un estudiante universitario de ingeniería de software que escribe "
-        "un trabajo académico de forma natural y personal. Aplica estas reglas a menos que te pongan una excepción:\n"
-        "1. Usa un tono directo y ligeramente conversacional, como si explicaras el tema a un compañero de clase inteligente — no a un tribunal. Evita saludos inmaduros o informales infantiles como 'Hola profe', 'Hola profesor' o '¡Qué onda a todos!'. Mantén la seriedad e identidad de un joven estudiante universitario.\n"
-        "2. Varía el largo de las oraciones deliberadamente: alterna frases cortas con otras más largas. Evita que todas las oraciones tengan una estructura similar.\n"
-        "3. Empieza algunos párrafos con conectores poco formales o reflexivos (pero úsalos de forma medida, no en todos): 'Lo interesante aquí es...', 'Vale la pena notar que...', 'En la práctica, esto significa...', 'Dicho de otro modo...'.\n"
-        "4. Incluye una opinión o perspectiva personal ocasional, enmarcada como tal: 'Desde mi punto de vista...', 'Me parece que...', 'Creo que esto es relevante porque...'.\n"
-        "5. Evita palabras y frases de IA típicas como: 'en resumen', 'es importante destacar', 'en el ámbito de', 'cabe mencionar', 'sin lugar a dudas', 'en conclusión podemos afirmar', 'a lo largo de este trabajo', 'en conclusión'. Si las detectas, cámbialas por algo más natural.\n"
-        "6. No sobreexpliques. Si algo es obvio en contexto, confía en que el lector lo entiende.\n"
-        "7. Usa vocabulario apropiado para el nivel universitario, pero sin palabras rebuscadas que nadie usaría al hablar.\n"
-        "8. Mantén la precisión técnica y académica del contenido — no sacrifiques exactitud por sonar humano.\n"
-        "9. Evita el uso de listas (viñetas/bullet points o listas numeradas) cuando redactes explicaciones, investigaciones o ensayos. Los humanos normalmente estructuran sus explicaciones usando párrafos fluidos y conectados. Usa listas únicamente si la asignación las pide de forma explícita o para enumerar elementos técnicos muy específicos (como pasos de un algoritmo o ejemplos de código).\n"
-        "10. PROFUNDIDAD Y EXTENSIÓN ACADÉMICA: Cuando se trate de tareas teóricas, investigaciones o ensayos. No te limites a resúmenes o respuestas de un solo párrafo. Desarrolla cada concepto explicando su trasfondo, la teoría en la que se apoya, comparaciones de ventajas y desventajas, ejemplos prácticos en la industria y perspectivas a futuro. El entregable final debe tener una extensión robusta equivalente a un reporte completo para (investigaciones teóricas)."
-    )
+
+def build_default_prompt_buffer(item):
+    """
+    Builds the pre-filled prompt buffer for nvim editing.
+    Includes the default system instruction (persona/rules) and task prompt.
+    """
+    title = item.get("title", "Sin Título")
+    description = item.get("description", "").strip()
+    course_code = item.get("course_code", "")
+    course_name = item.get("course_name", "")
+    due_date = item.get("due_date", "Sin fecha límite")
     course_display = f"{course_code} {course_name}".strip() or "Unknown Course"
-    prompt = (
+
+    default_prompt = (
         f"Desarrolla el entregable universitario basándote exactamente en las instrucciones de la asignación. "
         f"Para cada punto o pregunta solicitada en las instrucciones de Moodle, no te limites a una definición simple; "
         f"desarrolla explicaciones amplias de al menos 2 o 3 párrafos completos por punto, analizando sus fundamentos, "
-        f"ejemplos de aplicación práctica y consideraciones técnicas. El objetivo es producir un reporte formal "
+        f"ejemplos de aplicación práctica y consideraciones técnicas. El objetivo es producir un reporte formal.\n\n"
         f"Contexto del Entregable:\n"
         f"- Asignatura: {course_display}\n"
         f"- Fecha de Vencimiento: {due_date}\n\n"
         f"Título: {title}\n\n"
         f"Instrucciones de Moodle:\n{description}"
     )
-    if additional_info:
-        prompt += f"\n\nInstrucciones/Detalles Adicionales del Estudiante ( CRITICO ) la opinión del estudiante (si existe) pesa mas que todo lo demas:\n{additional_info}"
-    
+
+    return (
+        f"# ==============================================================================\n"
+        f"# INSTRUCCIONES DEL SISTEMA / ROL DE IA\n"
+        f"# (Modifica las reglas de estilo o rol de la IA según la asignatura/situación)\n"
+        f"# ==============================================================================\n"
+        f"{DEFAULT_SYSTEM_INSTRUCTION.strip()}\n\n"
+        f"# ==============================================================================\n"
+        f"# PROMPT Y CONTEXTO DE LA TAREA\n"
+        f"# (Instrucciones específicas, preguntas a responder y contexto de Moodle)\n"
+        f"# ==============================================================================\n"
+        f"{default_prompt.strip()}\n\n"
+        f"# ==============================================================================\n"
+        f"# INSTRUCCIONES ADICIONALES DEL ESTUDIANTE\n"
+        f"# (Escribe aquí cualquier indicación extra, o modifica el texto de arriba)\n"
+        f"# ==============================================================================\n"
+    )
+
+
+def parse_prompt_buffer(text):
+    """
+    Parses the edited buffer into (system_instruction, prompt).
+    """
+    prompt_marker = "# PROMPT Y CONTEXTO DE LA TAREA"
+    extra_marker = "# INSTRUCCIONES ADICIONALES DEL ESTUDIANTE"
+
+    if prompt_marker in text:
+        parts = text.split(prompt_marker, 1)
+        sys_part = parts[0]
+        prompt_part = parts[1]
+
+        clean_sys_lines = [
+            l for l in sys_part.splitlines()
+            if not l.startswith("# ===")
+            and not l.startswith("# INSTRUCCIONES DEL SISTEMA")
+            and not l.startswith("# (Modifica las reglas")
+        ]
+        system_instruction = "\n".join(clean_sys_lines).strip()
+
+        if extra_marker in prompt_part:
+            p_subparts = prompt_part.split(extra_marker, 1)
+            clean_p = [
+                l for l in p_subparts[0].splitlines()
+                if not l.startswith("# ===")
+                and not l.startswith("# (Instrucciones específicas")
+            ]
+            clean_extra = [
+                l for l in p_subparts[1].splitlines()
+                if not l.startswith("# ===")
+                and not l.startswith("# (Escribe aquí")
+            ]
+            prompt = "\n".join(clean_p).strip()
+            extra = "\n".join(clean_extra).strip()
+            if extra:
+                prompt += f"\n\nInstrucciones/Detalles Adicionales del Estudiante (CRÍTICO):\n{extra}"
+        else:
+            clean_p = [
+                l for l in prompt_part.splitlines()
+                if not l.startswith("# ===")
+                and not l.startswith("# (Instrucciones específicas")
+            ]
+            prompt = "\n".join(clean_p).strip()
+
+        return system_instruction, prompt
+
+    return DEFAULT_SYSTEM_INSTRUCTION, text.strip()
+
+
+def open_prompt_editor(stdscr, item):
+    """
+    Opens nvim with the default prompt pre-filled in the buffer.
+    Allows user to customize system instruction, task prompt, or additional info.
+    Returns the edited text, or None if aborted (:cq).
+    """
+    curses.endwin()
+    editor = "nvim" if shutil.which("nvim") else (os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vim")
+    initial_content = build_default_prompt_buffer(item)
+
+    with tempfile.NamedTemporaryFile(suffix=".md", prefix="bookish_prompt_", mode="w+", delete=False, encoding="utf-8") as tf:
+        tf.write(initial_content)
+        temp_path = tf.name
+
+    result = None
+    try:
+        proc = subprocess.run([editor, temp_path])
+        if proc.returncode == 0:
+            with open(temp_path, "r", encoding="utf-8") as f:
+                result = f.read().strip()
+    except Exception as e:
+        log.error(f"Error opening prompt editor: {e}")
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+    stdscr.refresh()
+    return result
+
+
+# Backwards compatibility alias
+open_external_editor = lambda stdscr, title: open_prompt_editor(stdscr, {"title": title})
+
+
+def generate_assignment_draft(client, title, description, course_code, course_name, due_date, additional_info="", custom_prompt=None):
+    from google import genai
+    from google.genai import types
+
+    if custom_prompt:
+        system_instruction, prompt = parse_prompt_buffer(custom_prompt)
+    else:
+        system_instruction = DEFAULT_SYSTEM_INSTRUCTION
+        course_display = f"{course_code} {course_name}".strip() or "Unknown Course"
+        prompt = (
+            f"Desarrolla el entregable universitario basándote exactamente en las instrucciones de la asignación. "
+            f"Para cada punto o pregunta solicitada en las instrucciones de Moodle, no te limites a una definición simple; "
+            f"desarrolla explicaciones amplias de al menos 2 o 3 párrafos completos por punto, analizando sus fundamentos, "
+            f"ejemplos de aplicación práctica y consideraciones técnicas. El objetivo es producir un reporte formal.\n\n"
+            f"Contexto del Entregable:\n"
+            f"- Asignatura: {course_display}\n"
+            f"- Fecha de Vencimiento: {due_date}\n\n"
+            f"Título: {title}\n\n"
+            f"Instrucciones de Moodle:\n{description}"
+        )
+        if additional_info:
+            prompt += f"\n\nInstrucciones/Detalles Adicionales del Estudiante (CRÍTICO):\n{additional_info}"
+
     max_retries = 3
     base_delay = 2
     for attempt in range(max_retries):
@@ -86,32 +218,33 @@ def wrap_text(text, width):
     return wrapped_lines
 
 
-def open_external_editor(stdscr, title):
-    curses.endwin()
-    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vim"
-    with tempfile.NamedTemporaryFile(suffix=".md", mode="w+", delete=False, encoding="utf-8") as tf:
-        temp_path = tf.name
-    try:
-        subprocess.run([editor, temp_path])
-        with open(temp_path, "r", encoding="utf-8") as f:
-            result = f.read().strip()
-    except Exception as e:
-        log.error(f"Error opening editor: {e}")
-        result = ""
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-    stdscr.refresh()
-    return result
-
-
 def format_description_for_tui(raw_description):
     pattern = r'\[INICIO ADJUNTO:\s*([^\]]+?)\s*\|\s*(\d+)\s*líneas\][\s\S]*?\[FIN ADJUNTO:[^\]]*\]'
     def _replace(match):
         filename = match.group(1).strip()
         lines = match.group(2).strip()
-        return f"\n[Adjunto: {filename} ({lines} líneas extraídas) -- Texto completo incluido en borrador]\n"
+        return f"\n[Adjunto: {filename} ({lines} líneas extraídas) -- Ctrl+O para expandir]\n"
     return re.sub(pattern, _replace, raw_description)
+
+
+def _extract_attachment_blocks(raw_description):
+    """
+    Pulls out all raw attachment text blocks from the description.
+    Returns a list of (filename, text) tuples.
+    """
+    pattern = r'\[INICIO ADJUNTO:\s*([^\]]+?)\s*\|\s*\d+\s*líneas\]([\s\S]*?)\[FIN ADJUNTO:[^\]]*\]'
+    results = []
+    for match in re.finditer(pattern, raw_description):
+        filename = match.group(1).strip()
+        text = match.group(2).strip()
+        if text:
+            results.append((filename, text))
+    return results
+
+
+def _has_attachments(raw_description):
+    """Returns True if the raw description contains at least one attachment block."""
+    return "[INICIO ADJUNTO:" in raw_description
 
 
 def curses_prompt_assignment(stdscr, item, index, total):
@@ -135,6 +268,8 @@ def curses_prompt_assignment(stdscr, item, index, total):
     
     # Precompute description format outside loop for performance
     tui_description = format_description_for_tui(description)
+    has_attachments = _has_attachments(description)
+    attachment_blocks = _extract_attachment_blocks(description) if has_attachments else []
     prev_width = -1
     wrapped_lines = []
 
@@ -209,10 +344,8 @@ def curses_prompt_assignment(stdscr, item, index, total):
         stdscr.addstr("] Solo MD  [")
         stdscr.addstr("P", curses.color_pair(3) | curses.A_BOLD)
         stdscr.addstr("] Presentación  [")
-        stdscr.addstr("A", curses.color_pair(3) | curses.A_BOLD)
-        stdscr.addstr("] AGY  [")
-        stdscr.addstr("O", curses.color_pair(3) | curses.A_BOLD)
-        stdscr.addstr("] OpenCode  [")
+        stdscr.addstr("H", curses.color_pair(3) | curses.A_BOLD)
+        stdscr.addstr("] Handoff  [")
         stdscr.addstr("N", curses.color_pair(3) | curses.A_BOLD)
         stdscr.addstr("] Omitir  [")
         stdscr.addstr("Q", curses.color_pair(3) | curses.A_BOLD)
@@ -229,20 +362,43 @@ def curses_prompt_assignment(stdscr, item, index, total):
             scroll_pos = max(0, scroll_pos - desc_height)
         elif ch == curses.KEY_NPAGE:
             scroll_pos = min(max_scroll, scroll_pos + desc_height)
+        elif ch == 15 and has_attachments:
+            # Ctrl+O: open extracted attachment text in nvim (read-only)
+            curses.endwin()
+            combined = ""
+            for fname, text in attachment_blocks:
+                combined += f"{'=' * 60}\n  Adjunto: {fname}\n{'=' * 60}\n\n{text}\n\n"
+            with tempfile.NamedTemporaryFile(
+                suffix=".md", mode="w", delete=False, encoding="utf-8",
+                prefix="bookish_adjunto_"
+            ) as tf:
+                tf.write(combined)
+                tmp_path = tf.name
+            try:
+                subprocess.run(["nvim", "-R", tmp_path])
+            except FileNotFoundError:
+                # Fallback to vim or $EDITOR if nvim is not installed
+                editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vim"
+                subprocess.run([editor, "-R", tmp_path])
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            stdscr.refresh()
+            # Return to TUI loop -- no action taken
         elif ch in [ord('y'), ord('Y'), 10, 13]:
-            additional_info = open_external_editor(stdscr, title)
-            return "yes", additional_info
+            custom_prompt = open_prompt_editor(stdscr, item)
+            if custom_prompt is None:
+                continue
+            return "yes", custom_prompt
         elif ch in [ord('m'), ord('M')]:
-            additional_info = open_external_editor(stdscr, title)
-            return "markdown_only", additional_info
+            custom_prompt = open_prompt_editor(stdscr, item)
+            if custom_prompt is None:
+                continue
+            return "markdown_only", custom_prompt
         elif ch in [ord('p'), ord('P')]:
             return "presentation", ""
-        elif ch in [ord('a'), ord('A')]:
-            additional_info = open_external_editor(stdscr, title)
-            return "agent_agy", additional_info
-        elif ch in [ord('o'), ord('O')]:
-            additional_info = open_external_editor(stdscr, title)
-            return "agent_opencode", additional_info
+        elif ch in [ord('h'), ord('H'), ord('a'), ord('A'), ord('o'), ord('O')]:
+            return "agent_handoff", ""
         elif ch in [ord('n'), ord('N')]:
             return "no", ""
         elif ch in [ord('q'), ord('Q')]:

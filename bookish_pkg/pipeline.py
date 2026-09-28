@@ -1,7 +1,9 @@
 import os
 import sys
+import re
 import json
 import time
+import shutil
 import curses
 import subprocess
 import logging
@@ -11,7 +13,7 @@ from bookish_pkg.config import (
     HANDOFF_DIR, CONVERTER_FORMAT_FILE, ASSIGNMENTS_FILE, PROJECT_ROOT,
     STUDENT_NAME, STUDENT_ENROLMENT,
 )
-from bookish_pkg.utils import sanitize_filename, build_cover_page_html
+from bookish_pkg.utils import sanitize_filename, build_cover_page_html, copy_to_clipboard
 from bookish_pkg.scraper import login_and_save_session, load_session_and_scrape
 from bookish_pkg.generator import curses_prompt_assignment, generate_assignment_draft
 from bookish_pkg.converter import convert_md_to_pdf, render_presentation_png
@@ -91,6 +93,64 @@ def ensure_directories():
     os.makedirs(PRESENTATIONS_DIR, exist_ok=True)
     os.makedirs(HANDOFF_DIR, exist_ok=True)
 
+def _detect_project_path(handoff_content):
+    """
+    Detects if the user specified an existing project directory in the handoff.
+    Scans for absolute paths or home paths (~/...) and verifies if they exist.
+    Avoids detecting Bookish's internal directories.
+    Returns the absolute path to the directory, or None.
+    """
+    matches = re.findall(r'((?:~|/)(?:[a-zA-Z0-9_\-\.]+/)*[a-zA-Z0-9_\-\.]+)', handoff_content)
+    for cand in matches:
+        clean = cand.rstrip(',.:;\'"()[]{}')
+        expanded = os.path.expanduser(clean)
+        # Avoid matching Bookish repo itself or its subdirectories
+        if expanded == PROJECT_ROOT or expanded.startswith(os.path.join(PROJECT_ROOT, "data")):
+            continue
+        if os.path.isdir(expanded):
+            return os.path.abspath(expanded)
+        elif os.path.isfile(expanded):
+            return os.path.dirname(os.path.abspath(expanded))
+    return None
+
+
+def _detect_route_from_handoff(handoff_content):
+    """
+    Detects the target project route specified by the user in the handoff file.
+    First checks the dedicated line: '- **Ruta del Proyecto:** <path>'.
+    Falls back to any detected absolute/home path, or PROJECT_ROOT.
+    """
+    # 1. Search for the explicit route line
+    match = re.search(
+        r'-\s*\*\*Ruta(?: del Proyecto)?(?:\s*/?\s*Workspace)?:\*\*\s*(.+)',
+        handoff_content,
+        re.IGNORECASE,
+    )
+    if match:
+        raw_val = match.group(1).strip()
+        clean_val = raw_val.strip('`"\'[]()').strip()
+        if clean_val and not clean_val.startswith("<") and not clean_val.startswith("["):
+            expanded = os.path.expanduser(clean_val)
+            if os.path.isdir(expanded):
+                return os.path.abspath(expanded)
+            elif os.path.isfile(expanded):
+                return os.path.dirname(os.path.abspath(expanded))
+            elif clean_val.startswith("/") or clean_val.startswith("~"):
+                try:
+                    os.makedirs(expanded, exist_ok=True)
+                except OSError:
+                    pass
+                return os.path.abspath(expanded)
+
+    # 2. Fallback to generic project path detection
+    detected = _detect_project_path(handoff_content)
+    if detected:
+        return detected
+
+    # 3. Default to PROJECT_ROOT
+    return PROJECT_ROOT
+
+
 def create_handoff_file(item):
     title = item.get("title", "Sin Título")
     course_code = item.get("course_code", "")
@@ -110,30 +170,33 @@ def create_handoff_file(item):
         additional_section = f"## Contexto / Instrucciones Adicionales del Estudiante\n\n{additional_info}\n\n---\n\n"
     handoff_content = (
         f"# Contexto de Asignación — Handoff para Agente IA\n\n"
-        f"> [!IMPORTANT]\n"
-        f"> **DIRECTIVA DE EJECUCIÓN DEL AGENTE**:\n"
-        f"> 1. NO escanees, busques ni leas otros archivos o carpetas del proyecto (como `src/`, `data/pdfs/`, `state.json`, `README.md` u otros borradores).\n"
-        f"> 2. TODO el contexto de la tarea, metadatos, instrucciones de Moodle, texto de adjuntos/videos y las reglas de formato están 100% CONTENIDOS en este archivo.\n"
-        f"> 3. Genera el borrador Markdown para esta tarea y guárdalo DIRECTAMENTE en: `{output_draft}`.\n\n"
+        f"> [!TIP]\n"
+        f"> **INSTRUCCIONES DE AGENT HANDOFF (OPENCODE / TMUX)**:\n"
+        f"> 1. En la línea `- **Ruta del Proyecto:**` (abajo en Metadatos), escribe la ruta del proyecto\n"
+        f">    donde deseas que se abra OpenCode (ej: `/home/thegxnster/py/miniProjects/ruleta`).\n"
+        f">    Si la dejas vacía, se abrirá en la carpeta de este repositorio.\n"
+        f"> 2. Modifica o agrega las instrucciones necesarias en este archivo.\n"
+        f"> 3. Al guardar y cerrar con `:x` o `:wq`:\n"
+        f">    - Todo este archivo se COPIARÁ A TU PORTAPAPELES automáticamente.\n"
+        f">    - Se abrirá un nuevo pane de tmux en la ruta especificada ejecutando OpenCode.\n"
+        f">    - Solo tendrás que pegar el contenido con Ctrl+V y empezar a programar.\n\n"
         f"---\n\n"
-        f"## Metadatos\n"
+        f"## Metadatos & Configuración\n"
         f"- **Asignatura:** {course_code}\n"
         f"- **Tarea:** {title}\n"
         f"- **Estudiante:** {student_name}\n"
         f"- **Matrícula:** {student_enrrolment}\n"
-        f"- **Fecha Límite:** {due_date}\n\n"
+        f"- **Fecha Límite:** {due_date}\n"
+        f"- **Ruta del Proyecto:** \n\n"
         f"---\n\n"
         f"## Instrucciones de Moodle\n\n"
         f"{description}\n\n"
         f"---\n\n"
         f"{additional_section}"
         f"## Instrucciones para el Agente\n\n"
-        f"Genera el borrador de esta asignación en formato Markdown.\n"
-        f"Guarda el resultado en: `{output_draft}`\n\n"
-        f"Sigue ESTRICTAMENTE las reglas de formato que están debajo (CONVERTER_FORMAT.md). "
-        f"El archivo .md será convertido a PDF por el sistema Bookish.\n\n"
+        f"[Escribe o modifica aquí lo que quieres que haga el agente.]\n\n"
         f"---\n\n"
-        f"## Reglas de Formato (CONVERTER_FORMAT.md)\n\n"
+        f"## Reglas de Formato (CONVERTER_FORMAT.md - Solo si la entrega es un documento PDF)\n\n"
         f"{format_rules}\n"
     )
     handoff_path = os.path.join(HANDOFF_DIR, f"{safe_title}.md")
@@ -141,33 +204,91 @@ def create_handoff_file(item):
         f.write(handoff_content)
     return handoff_path, output_draft
 
-def launch_agent(stdscr, agent_cmd, handoff_path, output_draft, title):
+
+def handle_agent_handoff(stdscr, handoff_path, output_draft, title):
     curses.endwin()
+
+    # Step 1: Open nvim for editing
     print(f"\n{'=' * 60}")
     print(f"  Tarea: {title}")
-    print(f"  Contexto guardado en: {handoff_path}")
-    print(f"  Archivo de salida esperado: {output_draft}")
-    print(f"  Lanzando {agent_cmd}...")
+    print(f"  Abriendo contexto en nvim para edición...")
+    print(f"  NOTA: Especifica la ruta en la línea:")
+    print(f"        - **Ruta del Proyecto:** /tu/ruta/aqui")
+    print(f"  Al salir (:x / :wq), el handoff se copiará a tu portapapeles")
+    print(f"  y se abrirá OpenCode en un nuevo pane de tmux.")
     print(f"{'=' * 60}\n")
-    initial_prompt = (
-        f"DIRECTIVA DE AGENTE: NO explores ni leas otros archivos o carpetas del proyecto (como src/, data/pdfs/, state.json). "
-        f"Todo el contexto de la asignación, metadatos, texto de adjuntos/videos y reglas de formato están TOTALMENTE CONTENIDOS en @[{handoff_path}]. "
-        f"Lee @[{handoff_path}] y escribe directamente el borrador de la asignación en {output_draft}. No analices el código del repositorio."
-    )
-    if agent_cmd == "opencode":
-        cmd = [agent_cmd, "run", "--auto", initial_prompt]
-    else:
-        cmd = [agent_cmd, "--dangerously-skip-permissions", initial_prompt]
+
+    editor = "nvim"
     try:
-        subprocess.run(cmd, cwd=PROJECT_ROOT)
+        subprocess.run([editor, handoff_path])
     except FileNotFoundError:
-        print(f"\n  Error: '{agent_cmd}' no está instalado o no está en el PATH.")
-        print(f"    Instálalo y vuelve a intentar.")
-        input("\n  Presiona Enter para continuar...")
-    except Exception as e:
-        print(f"\n  Error lanzando {agent_cmd}: {e}")
-        input("\n  Presiona Enter para continuar...")
+        editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vim"
+        subprocess.run([editor, handoff_path])
+
+    # Step 2: Read edited handoff content
+    content = ""
+    if os.path.exists(handoff_path):
+        with open(handoff_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+    # Step 3: Copy entire handoff to clipboard
+    copied = copy_to_clipboard(content)
+
+    # Step 4: Detect route from the specific line
+    target_route = _detect_route_from_handoff(content)
+
+    # Step 5: Open opencode on a new tmux pane
+    opencode_bin = shutil.which("opencode") or "opencode"
+    is_in_tmux = bool(os.environ.get("TMUX"))
+
+    print(f"\n{'=' * 60}")
+    print(f"  Tarea: {title}")
+    print(f"  Ruta detectada: {target_route}")
+    if copied:
+        print(f"  ✓ Handoff copiado exitosamente al portapapeles!")
+    else:
+        print(f"  ! Aviso: No se detectó herramienta de portapapeles (clip.exe/xclip).")
+
+    if is_in_tmux:
+        # Split window into a new pane in the target directory and run opencode
+        split_cmd = ["tmux", "split-window", "-c", target_route, f"{opencode_bin}; exec bash"]
+        split_res = subprocess.run(split_cmd)
+        if split_res.returncode == 0:
+            print(f"  ✓ OpenCode abierto en nuevo pane de tmux en:")
+            print(f"    {target_route}")
+            print(f"  → Pega el portapapeles (Ctrl+V) en OpenCode y maneja la sesión.")
+        else:
+            print(f"  ! Error abriendo pane en tmux. Abriendo en proceso actual...")
+            subprocess.run([opencode_bin], cwd=target_route)
+    else:
+        if shutil.which("tmux"):
+            safe_title = sanitize_filename(title)
+            session_name = f"opencode_{safe_title}"
+            subprocess.run([
+                "tmux", "new-session", "-d", "-s", session_name, "-c", target_route,
+                f"{opencode_bin}; exec bash"
+            ])
+            print(f"  ✓ OpenCode iniciado en sesión tmux: {session_name}")
+            print(f"  → Conéctate con: tmux attach -t {session_name}")
+            print(f"  → Pega el portapapeles (Ctrl+V) y maneja la sesión.")
+        else:
+            print(f"  (No estás en tmux) Abriendo OpenCode en {target_route}...")
+            try:
+                subprocess.run([opencode_bin], cwd=target_route)
+            except Exception as e:
+                print(f"  Error ejecutando opencode: {e}")
+
+    print(f"{'=' * 60}\n")
+    try:
+        input("Presiona Enter para continuar en Bookish...")
+    except (EOFError, KeyboardInterrupt):
+        pass
+
     stdscr.refresh()
+
+
+# Backwards compatibility alias
+launch_agent = handle_agent_handoff
 
 def run_bookish_pipeline(stdscr):
     logger = BookishLogger(stdscr)
@@ -256,13 +377,12 @@ def run_bookish_pipeline(stdscr):
             approved_markdown_only.append(item)
         elif action == "presentation":
             approved_presentations.append(item)
-        elif action in ("agent_agy", "agent_opencode"):
+        elif action in ("agent_handoff", "agent_agy", "agent_opencode"):
             item["additional_info"] = additional_info
-            agent_cmd = "agy" if action == "agent_agy" else "opencode"
             title = item.get("title", "Sin Título")
-            logger.log(f"Preparando handoff para '{title}' -> {agent_cmd}...", "info")
+            logger.log(f"Iniciando Agent Handoff para '{title}'...", "info")
             handoff_path, output_draft = create_handoff_file(item)
-            launch_agent(stdscr, agent_cmd, handoff_path, output_draft, title)
+            handle_agent_handoff(stdscr, handoff_path, output_draft, title)
             agent_handoffs.append(item)
             if os.path.exists(output_draft):
                 session_generated_mds.append(output_draft)
@@ -275,7 +395,7 @@ def run_bookish_pipeline(stdscr):
     if approved_presentations:
         summary_parts.append(f"{len(approved_presentations)} presentaciones")
     if agent_handoffs:
-        summary_parts.append(f"{len(agent_handoffs)} enviadas a agente externo")
+        summary_parts.append(f"{len(agent_handoffs)} enviadas a Agent Handoff")
         
     logger.log(f"Cuestionario completado: {', '.join(summary_parts) if summary_parts else 'ninguna tarea seleccionada'}.", "success")
     time.sleep(1)
@@ -319,7 +439,9 @@ def run_bookish_pipeline(stdscr):
                     logger.log(f"Generando {tag} para '{title}'...", "info")
                     try:
                         draft_content = generate_assignment_draft(
-                            client, title, description, course_code, course_name, due_date, additional_info
+                            client, title, description, course_code, course_name, due_date,
+                            additional_info="",
+                            custom_prompt=additional_info
                         )
                         header = build_cover_page_html(
                             course_code=course_code,

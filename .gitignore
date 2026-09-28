@@ -15,8 +15,9 @@ state.json
 .env
 
 # Generated application data
+data/
 data/assignments.json
-data/drafts/*
+# data/drafts/*
 data/attachments/*
 data/agent_handoff/*
 data/pdfs/*

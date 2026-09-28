@@ -155,3 +155,71 @@ def inline_images(html: str, base_dir: str | None = None) -> str:
     def _replace(match):
         return f'src="{image_data_uri(match.group(1), base_dir=base_dir)}"'
     return re.sub(r"""src=["']([^"']+)["']""", _replace, html)
+
+
+# ---------------------------------------------------------------------------
+# Clipboard helper (WSL clip.exe, Linux xclip / xsel / wl-copy)
+# ---------------------------------------------------------------------------
+
+def copy_to_clipboard(text: str) -> bool:
+    """
+    Copies text to system clipboard.
+    Works across WSL (clip.exe), X11 (xclip / xsel), and Wayland (wl-copy).
+    Returns True if copied to at least one clipboard.
+    """
+    copied = False
+
+    # 1. WSL clip.exe (copies to Windows host clipboard)
+    if shutil.which("clip.exe"):
+        try:
+            subprocess.run(
+                ["clip.exe"],
+                input=text.encode("utf-16le"),
+                check=True,
+                stderr=subprocess.DEVNULL,
+            )
+            copied = True
+        except Exception as e:
+            log.debug("clip.exe failed: %s", e)
+
+    # 2. Linux X11 xclip
+    if shutil.which("xclip"):
+        try:
+            subprocess.run(
+                ["xclip", "-selection", "clipboard"],
+                input=text.encode("utf-8"),
+                check=True,
+                stderr=subprocess.DEVNULL,
+            )
+            copied = True
+        except Exception as e:
+            log.debug("xclip failed: %s", e)
+
+    # 3. Linux X11 xsel
+    if shutil.which("xsel"):
+        try:
+            subprocess.run(
+                ["xsel", "--clipboard", "--input"],
+                input=text.encode("utf-8"),
+                check=True,
+                stderr=subprocess.DEVNULL,
+            )
+            copied = True
+        except Exception as e:
+            log.debug("xsel failed: %s", e)
+
+    # 4. Wayland wl-copy
+    if shutil.which("wl-copy"):
+        try:
+            subprocess.run(
+                ["wl-copy"],
+                input=text.encode("utf-8"),
+                check=True,
+                stderr=subprocess.DEVNULL,
+            )
+            copied = True
+        except Exception as e:
+            log.debug("wl-copy failed: %s", e)
+
+    return copied
+
