@@ -10,6 +10,7 @@ import re
 import logging
 import shutil
 import subprocess
+from datetime import datetime
 
 from bookish_pkg.config import PROJECT_ROOT
 
@@ -222,4 +223,86 @@ def copy_to_clipboard(text: str) -> bool:
             log.debug("wl-copy failed: %s", e)
 
     return copied
+
+
+# ---------------------------------------------------------------------------
+# Moodle Due Date Parsing & Overdue Checking
+# ---------------------------------------------------------------------------
+
+SPANISH_MONTHS = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12,
+    "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
+    "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12
+}
+
+
+def parse_moodle_due_date(date_str: str) -> datetime | None:
+    """
+    Parses Spanish or English Moodle deadline strings into a datetime object.
+    Examples:
+      - 'viernes, 16 de octubre de 2026, 12:00'
+      - 'martes, 20 de octubre de 2026, 14:00'
+      - '16 October 2026, 12:00'
+    Returns None if date cannot be parsed or if no due date is set.
+    """
+    if not date_str or "sin fecha" in date_str.lower():
+        return None
+
+    # Spanish pattern: 'viernes, 16 de octubre de 2026, 12:00'
+    m = re.search(
+        r'(\d{1,2})\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ]+)(?:\s+de\s+(\d{4}))?(?:[,\s]+(\d{1,2}):(\d{2}))?',
+        date_str,
+        re.IGNORECASE
+    )
+    if m:
+        day = int(m.group(1))
+        month_name = m.group(2).lower()
+        year = int(m.group(3)) if m.group(3) else datetime.now().year
+        hour = int(m.group(4)) if m.group(4) is not None else 23
+        minute = int(m.group(5)) if m.group(5) is not None else 59
+        month = SPANISH_MONTHS.get(month_name)
+        if month:
+            try:
+                return datetime(year, month, day, hour, minute)
+            except ValueError:
+                pass
+
+    # English pattern: '16 October 2026, 12:00'
+    m2 = re.search(
+        r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})(?:[,\s]+(\d{1,2}):(\d{2}))?',
+        date_str,
+        re.IGNORECASE
+    )
+    if m2:
+        day = int(m2.group(1))
+        month_name = m2.group(2).lower()
+        year = int(m2.group(3))
+        hour = int(m2.group(4)) if m2.group(4) is not None else 23
+        minute = int(m2.group(5)) if m2.group(5) is not None else 59
+        month = SPANISH_MONTHS.get(month_name)
+        if month:
+            try:
+                return datetime(year, month, day, hour, minute)
+            except ValueError:
+                pass
+
+    return None
+
+
+def is_assignment_overdue(date_str: str, now: datetime | None = None) -> bool:
+    """
+    Determines whether an assignment's deadline has passed.
+    Returns True if the due date is strictly in the past, False otherwise.
+    """
+    dt = parse_moodle_due_date(date_str)
+    if not dt:
+        return False
+    if now is None:
+        now = datetime.now()
+    return dt < now
+
 

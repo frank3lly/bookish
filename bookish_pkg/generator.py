@@ -346,6 +346,8 @@ def curses_prompt_assignment(stdscr, item, index, total):
         stdscr.addstr("] Presentación  [")
         stdscr.addstr("H", curses.color_pair(3) | curses.A_BOLD)
         stdscr.addstr("] Handoff  [")
+        stdscr.addstr("U", curses.color_pair(3) | curses.A_BOLD)
+        stdscr.addstr("] Subir  [")
         stdscr.addstr("N", curses.color_pair(3) | curses.A_BOLD)
         stdscr.addstr("] Omitir  [")
         stdscr.addstr("Q", curses.color_pair(3) | curses.A_BOLD)
@@ -399,6 +401,8 @@ def curses_prompt_assignment(stdscr, item, index, total):
             return "presentation", ""
         elif ch in [ord('h'), ord('H'), ord('a'), ord('A'), ord('o'), ord('O')]:
             return "agent_handoff", ""
+        elif ch in [ord('u'), ord('U')]:
+            return "upload", ""
         elif ch in [ord('n'), ord('N')]:
             return "no", ""
         elif ch in [ord('q'), ord('Q')]:
