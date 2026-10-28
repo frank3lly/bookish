@@ -374,61 +374,66 @@ def convert_md_to_pdf(target=None, output_dest=None):
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page()
-        
-        for md_path in md_files:
-            file_name = os.path.basename(md_path)
-            title_base = os.path.splitext(file_name)[0]
+        try:
+            page = browser.new_page()
             
-            if target is not None and os.path.isfile(target) and output_dest and not os.path.isdir(output_dest):
-                pdf_path = os.path.abspath(output_dest)
-            else:
-                pdf_path = os.path.join(default_out_dir, f"{title_base}.pdf")
-            
-            base_dir = os.path.dirname(os.path.abspath(md_path))
-            
+            for md_path in md_files:
+                file_name = os.path.basename(md_path)
+                title_base = os.path.splitext(file_name)[0]
+                
+                if target is not None and os.path.isfile(target) and output_dest and not os.path.isdir(output_dest):
+                    pdf_path = os.path.abspath(output_dest)
+                else:
+                    pdf_path = os.path.join(default_out_dir, f"{title_base}.pdf")
+                
+                base_dir = os.path.dirname(os.path.abspath(md_path))
+                
+                try:
+                    log.info(f"Converting '{file_name}' to PDF...")
+                    
+                    with open(md_path, "r", encoding="utf-8") as f:
+                        raw_content = f.read()
+                    
+                    # Preprocess content to sanitize links and standardise formatting
+                    md_content = preprocess_markdown(raw_content)
+                    
+                    # Write the clean markdown back to the file to keep them in sync
+                    if md_content != raw_content:
+                        with open(md_path, "w", encoding="utf-8") as f:
+                            f.write(md_content)
+                    
+                    # Convert markdown to html, enabling tables and code blocks
+                    html_body = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
+                    
+                    # Render inside our styled template
+                    full_html = HTML_TEMPLATE.format(title=title_base.replace("_", " ").title(), content=html_body)
+                    
+                    # Inline all images (logo, screenshots, relative/absolute images) as Base64 Data URIs
+                    full_html = inline_images(full_html, base_dir=base_dir)
+                    
+                    # Set page content
+                    page.set_content(full_html)
+                    
+                    # Render to PDF using Chromium's engine without header/footer overlays
+                    page.pdf(
+                        path=pdf_path,
+                        format="Letter",
+                        print_background=True,
+                        display_header_footer=False,
+                        margin={"top": "1.0in", "bottom": "1.0in", "left": "1.0in", "right": "1.0in"}
+                    )
+                    log.info(f"✓ Saved PDF: {pdf_path}")
+                    open_file_async(pdf_path)
+                    
+                except Exception as e:
+                    log.error(f"✗ Error converting '{file_name}': {e}")
+                    
+            log.info("PDF conversion completed successfully!")
+        finally:
             try:
-                log.info(f"Converting '{file_name}' to PDF...")
-                
-                with open(md_path, "r", encoding="utf-8") as f:
-                    raw_content = f.read()
-                
-                # Preprocess content to sanitize links and standardise formatting
-                md_content = preprocess_markdown(raw_content)
-                
-                # Write the clean markdown back to the file to keep them in sync
-                if md_content != raw_content:
-                    with open(md_path, "w", encoding="utf-8") as f:
-                        f.write(md_content)
-                
-                # Convert markdown to html, enabling tables and code blocks
-                html_body = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
-                
-                # Render inside our styled template
-                full_html = HTML_TEMPLATE.format(title=title_base.replace("_", " ").title(), content=html_body)
-                
-                # Inline all images (logo, screenshots, relative/absolute images) as Base64 Data URIs
-                full_html = inline_images(full_html, base_dir=base_dir)
-                
-                # Set page content
-                page.set_content(full_html)
-                
-                # Render to PDF using Chromium's engine without header/footer overlays
-                page.pdf(
-                    path=pdf_path,
-                    format="Letter",
-                    print_background=True,
-                    display_header_footer=False,
-                    margin={"top": "1.0in", "bottom": "1.0in", "left": "1.0in", "right": "1.0in"}
-                )
-                log.info(f"✓ Saved PDF: {pdf_path}")
-                open_file_async(pdf_path)
-                
-            except Exception as e:
-                log.error(f"✗ Error converting '{file_name}': {e}")
-                
-        browser.close()
-        log.info("PDF conversion completed successfully!")
+                browser.close()
+            except Exception:
+                pass
 
 
 def render_presentation_png(item, output_path=None):
@@ -445,7 +450,7 @@ def render_presentation_png(item, output_path=None):
     title = item.get("title", "Presentacion")
     course_code = item.get("course_code", "")
     student_name = item.get("student_name", STUDENT_NAME)
-    student_enrrolment = item.get("student_enrrolment", STUDENT_ENROLMENT)
+    student_enrolment = item.get("student_enrolment") or item.get("student_enrrolment") or STUDENT_ENROLMENT
     due_date = item.get("due_date", "Sin fecha límite")
 
     if not output_path:
@@ -456,7 +461,7 @@ def render_presentation_png(item, output_path=None):
         course_code=course_code,
         title=title,
         student_name=student_name,
-        student_enrolment=student_enrrolment,
+        student_enrolment=student_enrolment,
         due_date=due_date
     )
 
@@ -465,10 +470,15 @@ def render_presentation_png(item, output_path=None):
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 816, "height": 1056})
-        page.set_content(full_html)
-        page.locator(".cover-page").screenshot(path=output_path)
-        browser.close()
+        try:
+            page = browser.new_page(viewport={"width": 816, "height": 1056})
+            page.set_content(full_html)
+            page.locator(".cover-page").screenshot(path=output_path)
+        finally:
+            try:
+                browser.close()
+            except Exception:
+                pass
 
     open_file_async(output_path)
     return output_path

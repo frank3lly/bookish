@@ -356,33 +356,37 @@ def login_and_save_session(username: str, password: str):
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-            page = context.new_page()
-
-            page.add_init_script(MOODLE_SESSION_STORAGE_JS)
-
-            safe_goto(page, LOGIN_URL)
-
-            page.fill("input#username", username)
-            page.fill("input#password", password)
-            page.click("#loginbtn")
-
             try:
-                page.wait_for_url(lambda url: "login/index.php" not in url, timeout=15000)
-            except PlaywrightTimeoutError:
+                context = browser.new_context()
+                page = context.new_page()
+
+                page.add_init_script(MOODLE_SESSION_STORAGE_JS)
+
+                safe_goto(page, LOGIN_URL)
+
+                page.fill("input#username", username)
+                page.fill("input#password", password)
+                page.click("#loginbtn")
+
+                try:
+                    page.wait_for_url(lambda url: "login/index.php" not in url, timeout=15000)
+                except PlaywrightTimeoutError:
+                    dismiss_overlays(page)
+                    error_locator = page.locator(".alert-danger, .loginerrors, #loginerrormessage")
+                    if error_locator.count() > 0:
+                        err_text = error_locator.first.inner_text().strip()
+                        raise RuntimeError(f"Login failed: {err_text}")
+                    else:
+                        raise RuntimeError("Login timed out. Check your credentials or network.")
+
                 dismiss_overlays(page)
-                error_locator = page.locator(".alert-danger, .loginerrors, #loginerrormessage")
-                if error_locator.count() > 0:
-                    err_text = error_locator.first.inner_text().strip()
-                    raise RuntimeError(f"Login failed: {err_text}")
-                else:
-                    raise RuntimeError("Login timed out. Check your credentials or network.")
 
-            dismiss_overlays(page)
-
-            context.storage_state(path=STATE_FILE)
-            context.close()
-            browser.close()
+                context.storage_state(path=STATE_FILE)
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
 
     except RuntimeError:
         raise
@@ -631,84 +635,78 @@ def upload_assignment_submission(assignment_url: str, file_path: str) -> tuple[b
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(storage_state=STATE_FILE)
-            page = context.new_page()
-            page.add_init_script(MOODLE_SESSION_STORAGE_JS)
-
-            safe_goto(page, assignment_url)
-
-            if "login/index.php" in page.url:
-                context.close()
-                browser.close()
-                return False, "La sesión de Moodle ha expirado. Por favor re-autentica."
-
-            page_text = page.locator("body").inner_text().lower()
-            if "enviado para calificar" in page_text and "editar entrega" not in page_text:
-                context.close()
-                browser.close()
-                return False, "La tarea ya está enviada para calificar y no admite modificaciones."
-
-            # 1. Look for 'Agregar entrega' or 'Editar entrega'
-            sub_btn = page.locator('button:has-text("Agregar entrega"), input[value*="Agregar entrega"], button:has-text("Editar entrega"), input[value*="Editar entrega"]')
-            if sub_btn.count() == 0:
-                context.close()
-                browser.close()
-                return False, "No se encontró botón de entrega en Moodle (posiblemente fuera de plazo o cerrada)."
-
-            sub_btn.first.click()
-            page.wait_for_load_state("networkidle")
-
-            # 2. Open File Picker (.fp-btn-add)
-            btn_add = page.locator('.fp-btn-add a, .fp-btn-add button')
-            if btn_add.count() == 0:
-                context.close()
-                browser.close()
-                return False, "No se encontró el gestor de archivos (filemanager) en la página de entrega."
-
-            btn_add.first.click()
-
-            # 3. Wait for file input inside modal
-            page.wait_for_selector('input[name="repo_upload_file"], input[type="file"]', state="attached", timeout=15000)
-            file_input = page.locator('input[name="repo_upload_file"]').first
-            file_input.set_input_files(file_path)
-
-            # 4. Click 'Subir este archivo'
-            upload_btn = page.locator('button.fp-upload-btn, button:has-text("Subir este archivo")')
-            upload_btn.first.click()
-
-            # Handle possible overwrite dialogue
             try:
-                overwrite_btn = page.locator('.fp-dlg button:has-text("Sobrescribir"), button.fp-dlg-butoverwrite, button:has-text("Overwrite")')
-                if overwrite_btn.is_visible(timeout=3000):
-                    overwrite_btn.first.click()
-            except Exception:
-                pass
+                context = browser.new_context(storage_state=STATE_FILE)
+                page = context.new_page()
+                page.add_init_script(MOODLE_SESSION_STORAGE_JS)
 
-            # Wait for upload modal to close
-            try:
-                page.wait_for_selector('.fp-upload-form', state="hidden", timeout=20000)
-            except Exception:
-                time.sleep(2)
+                safe_goto(page, assignment_url)
 
-            # 5. Click 'Guardar cambios'
-            save_btn = page.locator('#id_submitbutton, input[value*="Guardar cambios"], button:has-text("Guardar cambios")')
-            if save_btn.count() == 0:
-                context.close()
-                browser.close()
-                return False, "No se encontró el botón 'Guardar cambios' tras adjuntar el archivo."
+                if "login/index.php" in page.url:
+                    return False, "La sesión de Moodle ha expirado. Por favor re-autentica."
 
-            save_btn.first.click()
-            page.wait_for_load_state("networkidle")
+                page_text = page.locator("body").inner_text().lower()
+                if "enviado para calificar" in page_text and "editar entrega" not in page_text:
+                    return False, "La tarea ya está enviada para calificar y no admite modificaciones."
 
-            # Verify submission on result page
-            result_text = page.locator("body").inner_text()
-            context.close()
-            browser.close()
+                # 1. Look for 'Agregar entrega' or 'Editar entrega'
+                sub_btn = page.locator('button:has-text("Agregar entrega"), input[value*="Agregar entrega"], button:has-text("Editar entrega"), input[value*="Editar entrega"]')
+                if sub_btn.count() == 0:
+                    return False, "No se encontró botón de entrega en Moodle (posiblemente fuera de plazo o cerrada)."
 
-            if file_name.lower() in result_text.lower() or "guardado como borrador" in result_text.lower() or "enviado para calificar" in result_text.lower() or "borrador (no enviado)" in result_text.lower():
-                return True, f"'{file_name}' guardado exitosamente en Moodle."
-            else:
-                return True, f"Entrega procesada en Moodle para '{file_name}'."
+                sub_btn.first.click()
+                page.wait_for_load_state("networkidle")
+
+                # 2. Open File Picker (.fp-btn-add)
+                btn_add = page.locator('.fp-btn-add a, .fp-btn-add button')
+                if btn_add.count() == 0:
+                    return False, "No se encontró el gestor de archivos (filemanager) en la página de entrega."
+
+                btn_add.first.click()
+
+                # 3. Wait for file input inside modal
+                page.wait_for_selector('input[name="repo_upload_file"], input[type="file"]', state="attached", timeout=15000)
+                file_input = page.locator('input[name="repo_upload_file"]').first
+                file_input.set_input_files(file_path)
+
+                # 4. Click 'Subir este archivo'
+                upload_btn = page.locator('button.fp-upload-btn, button:has-text("Subir este archivo")')
+                upload_btn.first.click()
+
+                # Handle possible overwrite dialogue
+                try:
+                    overwrite_btn = page.locator('.fp-dlg button:has-text("Sobrescribir"), button.fp-dlg-butoverwrite, button:has-text("Overwrite")')
+                    if overwrite_btn.is_visible(timeout=3000):
+                        overwrite_btn.first.click()
+                except Exception:
+                    pass
+
+                # Wait for upload modal to close
+                try:
+                    page.wait_for_selector('.fp-upload-form', state="hidden", timeout=20000)
+                except Exception:
+                    time.sleep(2)
+
+                # 5. Click 'Guardar cambios'
+                save_btn = page.locator('#id_submitbutton, input[value*="Guardar cambios"], button:has-text("Guardar cambios")')
+                if save_btn.count() == 0:
+                    return False, "No se encontró el botón 'Guardar cambios' tras adjuntar el archivo."
+
+                save_btn.first.click()
+                page.wait_for_load_state("networkidle")
+
+                # Verify submission on result page
+                result_text = page.locator("body").inner_text()
+
+                if file_name.lower() in result_text.lower() or "guardado como borrador" in result_text.lower() or "enviado para calificar" in result_text.lower() or "borrador (no enviado)" in result_text.lower():
+                    return True, f"'{file_name}' guardado exitosamente en Moodle."
+                else:
+                    return True, f"Entrega procesada en Moodle para '{file_name}'."
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
 
     except Exception as e:
         return False, f"Error durante la subida a Moodle: {e}"
@@ -745,120 +743,125 @@ def load_session_and_scrape(force_refresh: bool = False):
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(storage_state=STATE_FILE)
-            page = context.new_page()
+            try:
+                context = browser.new_context(storage_state=STATE_FILE)
+                page = context.new_page()
 
-            page.add_init_script(MOODLE_SESSION_STORAGE_JS)
+                page.add_init_script(MOODLE_SESSION_STORAGE_JS)
 
-            safe_goto(page, CALENDAR_URL)
+                safe_goto(page, CALENDAR_URL)
 
-            if "login/index.php" in page.url:
-                context.close()
-                browser.close()
-                raise RuntimeError("Session has expired! Please run the login command again.")
+                if "login/index.php" in page.url:
+                    raise RuntimeError("Session has expired! Please run the login command again.")
 
-            assignment_links = page.locator('a[href*="mod/assign/view.php?id="]').all()
+                assignment_links = page.locator('a[href*="mod/assign/view.php?id="]').all()
 
-            unique_assignments = {}
-            for link in assignment_links:
-                href = link.get_attribute("href")
-                if href:
-                    clean_href = href.split("#")[0]
+                unique_assignments = {}
+                for link in assignment_links:
+                    href = link.get_attribute("href")
+                    if href:
+                        clean_href = href.split("#")[0]
 
-                    eventname_locator = link.locator(".eventname")
-                    if eventname_locator.count() > 0:
-                        name = eventname_locator.first.inner_text().strip()
-                    else:
-                        name = link.inner_text().strip()
+                        eventname_locator = link.locator(".eventname")
+                        if eventname_locator.count() > 0:
+                            name = eventname_locator.first.inner_text().strip()
+                        else:
+                            name = link.inner_text().strip()
 
-                    if clean_href not in unique_assignments or (name and not unique_assignments[clean_href]):
-                        unique_assignments[clean_href] = name
+                        if clean_href not in unique_assignments or (name and not unique_assignments[clean_href]):
+                            unique_assignments[clean_href] = name
 
-            scraped_data = []
-            reused_count = 0
-            scraped_count = 0
+                scraped_data = []
+                reused_count = 0
+                scraped_count = 0
 
-            if unique_assignments:
-                for url, name in unique_assignments.items():
-                    cached_item = cached_by_url.get(url)
-                    needs_scrape = force_refresh or (cached_item is None)
+                if unique_assignments:
+                    for url, name in unique_assignments.items():
+                        cached_item = cached_by_url.get(url)
+                        needs_scrape = force_refresh or (cached_item is None)
 
-                    # If calendar title differs from cached title, teacher modified it
-                    if cached_item and name:
-                        cached_title = cached_item.get("title", "")
-                        clean_cal_name = re.sub(
-                            r'^(?:vencimiento de|apertura de|cierre de|tarea:?|due\s+date\s+for)\s+',
-                            '',
-                            name,
-                            flags=re.IGNORECASE
-                        ).strip()
-                        if clean_cal_name and clean_cal_name.lower() != cached_title.strip().lower():
-                            needs_scrape = True
+                        # If calendar title differs from cached title, teacher modified it
+                        if cached_item and name:
+                            cached_title = cached_item.get("title", "")
+                            clean_cal_name = re.sub(
+                                r'^(?:vencimiento de|apertura de|cierre de|tarea:?|due\s+date\s+for)\s+',
+                                '',
+                                name,
+                                flags=re.IGNORECASE
+                            ).strip()
+                            if clean_cal_name and clean_cal_name.lower() != cached_title.strip().lower():
+                                needs_scrape = True
 
-                    if not needs_scrape and cached_item:
-                        # Check if cached assignment has already expired
-                        if is_assignment_overdue(cached_item.get("due_date", "")):
-                            log.info(f"Omitiendo tarea vencida: {cached_item.get('title')} (venció {cached_item.get('due_date')})")
-                            continue
-
-                        # Check if cached assignment has already been submitted or graded
-                        if check_assignment_is_submitted(context, url):
-                            log.info(f"Omitiendo tarea ya entregada/calificada: {cached_item.get('title')}")
-                            continue
-
-                        scraped_data.append(cached_item)
-                        reused_count += 1
-                        log.debug(f"Reusando de caché: {cached_item.get('title')}")
-                    else:
-                        try:
-                            title, description, course_code, open_date, due_date, is_submitted = get_assignment_details(
-                                page, url, fallback_title=name
-                            )
-                            if is_submitted:
-                                log.info(f"Omitiendo tarea ya entregada/calificada: {title}")
+                        if not needs_scrape and cached_item:
+                            # Check if cached assignment has already expired
+                            if is_assignment_overdue(cached_item.get("due_date", "")):
+                                log.info(f"Omitiendo tarea vencida: {cached_item.get('title')} (venció {cached_item.get('due_date')})")
                                 continue
 
-                            if is_assignment_overdue(due_date):
-                                log.info(f"Omitiendo tarea vencida: {title} (venció {due_date})")
+                            # Check if cached assignment has already been submitted or graded
+                            if check_assignment_is_submitted(context, url):
+                                log.info(f"Omitiendo tarea ya entregada/calificada: {cached_item.get('title')}")
                                 continue
 
-                            student_name = cached_item.get("student_name", STUDENT_NAME) if cached_item else STUDENT_NAME
-                            student_enrrolment = cached_item.get("student_enrrolment", STUDENT_ENROLMENT) if cached_item else STUDENT_ENROLMENT
+                            scraped_data.append(cached_item)
+                            reused_count += 1
+                            log.debug(f"Reusando de caché: {cached_item.get('title')}")
+                        else:
+                            try:
+                                title, description, course_code, open_date, due_date, is_submitted = get_assignment_details(
+                                    page, url, fallback_title=name
+                                )
+                                if is_submitted:
+                                    log.info(f"Omitiendo tarea ya entregada/calificada: {title}")
+                                    continue
 
-                            new_item = {
-                                "title": title,
-                                "url": url,
-                                "course_code": course_code,
-                                "open_date": open_date,
-                                "due_date": due_date,
-                                "description": description,
-                                "student_name": student_name,
-                                "student_enrrolment": student_enrrolment,
-                                "scraped_at": time.time(),
-                            }
-                            scraped_data.append(new_item)
-                            scraped_count += 1
-                            log.info(f"Extraída de Moodle: {title}")
-                        except PlaywrightError as e:
-                            log.warning(f"Error scraping assignment {url}: {e}")
-                            if cached_item and not check_assignment_is_submitted(context, url):
-                                scraped_data.append(cached_item)
-                                reused_count += 1
-                        except Exception as e:
-                            log.warning(f"Error scraping assignment {url}: {e}")
-                            if cached_item and not check_assignment_is_submitted(context, url):
-                                scraped_data.append(cached_item)
-                                reused_count += 1
+                                if is_assignment_overdue(due_date):
+                                    log.info(f"Omitiendo tarea vencida: {title} (venció {due_date})")
+                                    continue
 
-            os.makedirs(DATA_DIR, exist_ok=True)
+                                student_name = cached_item.get("student_name", STUDENT_NAME) if cached_item else STUDENT_NAME
+                                student_enrolment = (
+                                    cached_item.get("student_enrolment") or cached_item.get("student_enrrolment") or STUDENT_ENROLMENT
+                                ) if cached_item else STUDENT_ENROLMENT
 
-            with open(ASSIGNMENTS_FILE, "w", encoding="utf-8") as f:
-                json.dump(scraped_data, f, indent=2, ensure_ascii=False)
+                                new_item = {
+                                    "title": title,
+                                    "url": url,
+                                    "course_code": course_code,
+                                    "open_date": open_date,
+                                    "due_date": due_date,
+                                    "description": description,
+                                    "student_name": student_name,
+                                    "student_enrolment": student_enrolment,
+                                    "student_enrrolment": student_enrolment,
+                                    "scraped_at": time.time(),
+                                }
+                                scraped_data.append(new_item)
+                                scraped_count += 1
+                                log.info(f"Extraída de Moodle: {title}")
+                            except PlaywrightError as e:
+                                log.warning(f"Error scraping assignment {url}: {e}")
+                                if cached_item and not is_assignment_overdue(cached_item.get("due_date", "")) and not check_assignment_is_submitted(context, url):
+                                    scraped_data.append(cached_item)
+                                    reused_count += 1
+                            except Exception as e:
+                                log.warning(f"Error scraping assignment {url}: {e}")
+                                if cached_item and not is_assignment_overdue(cached_item.get("due_date", "")) and not check_assignment_is_submitted(context, url):
+                                    scraped_data.append(cached_item)
+                                    reused_count += 1
 
-            context.close()
-            browser.close()
+                os.makedirs(DATA_DIR, exist_ok=True)
 
-            return len(scraped_data), reused_count, scraped_count
+                with open(ASSIGNMENTS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(scraped_data, f, indent=2, ensure_ascii=False)
+
+                return len(scraped_data), reused_count, scraped_count
+
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
 
     except Exception as e:
         if isinstance(e, (FileNotFoundError, RuntimeError)):

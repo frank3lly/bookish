@@ -1,6 +1,6 @@
 # Rules & Formatting Specification for Bookish PDF Converter
 
-This document defines the exact formatting and structural rules for Markdown (`.md`) files to be converted into clean, professional academic PDFs using `src/converter.py`. Pass this guide to AI models (ChatGPT, Claude, Gemini) when requesting homework drafts or reports.
+This document defines the exact formatting and structural rules for Markdown (`.md`) files to be converted into clean, professional academic PDFs using `bookish_pkg.converter`. Pass this guide to AI models (ChatGPT, Claude, Gemini) when requesting homework drafts or reports.
 
 ---
 
@@ -107,17 +107,17 @@ Data tables must use standard Markdown table syntax:
 
 ## 6. Execution & Usage Commands
 
-### Batch conversion (default directory `data/drafts/` -> `data/pdfs/`):
+### Batch conversion (default directory `data/drafts/` -> configured output directory):
 ```bash
-python3 src/converter.py
+python3 -m bookish_pkg.converter
 ```
 
 ### Convert a specific directory of Markdown files:
 ```bash
-python3 src/converter.py /ruta/a/la/carpeta/ [ruta/de/salida/]
+python3 -m bookish_pkg.converter /ruta/a/la/carpeta/ [ruta/de/salida/]
 ```
 
 ### Convert a single Markdown file:
 ```bash
-python3 src/converter.py /ruta/a/mi_tarea.md [/ruta/de/salida/mi_tarea.pdf]
+python3 -m bookish_pkg.converter /ruta/a/mi_tarea.md [/ruta/de/salida/mi_tarea.pdf]
 ```

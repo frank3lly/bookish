@@ -243,18 +243,20 @@ SPANISH_MONTHS = {
 def parse_moodle_due_date(date_str: str) -> datetime | None:
     """
     Parses Spanish or English Moodle deadline strings into a datetime object.
+    Supports 24h and 12h (am/pm) time formats.
     Examples:
       - 'viernes, 16 de octubre de 2026, 12:00'
       - 'martes, 20 de octubre de 2026, 14:00'
       - '16 October 2026, 12:00'
+      - 'October 16, 2026, 11:59 PM'
     Returns None if date cannot be parsed or if no due date is set.
     """
     if not date_str or "sin fecha" in date_str.lower():
         return None
 
-    # Spanish pattern: 'viernes, 16 de octubre de 2026, 12:00'
+    # Spanish pattern: 'viernes, 16 de octubre de 2026, 12:00 [pm/am]'
     m = re.search(
-        r'(\d{1,2})\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ]+)(?:\s+de\s+(\d{4}))?(?:[,\s]+(\d{1,2}):(\d{2}))?',
+        r'(\d{1,2})\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ]+)(?:\s+de\s+(\d{4}))?(?:[,\s]+(\d{1,2}):(\d{2})(?:\s*([ap]\.?\s*m\.?))?)?',
         date_str,
         re.IGNORECASE
     )
@@ -264,6 +266,13 @@ def parse_moodle_due_date(date_str: str) -> datetime | None:
         year = int(m.group(3)) if m.group(3) else datetime.now().year
         hour = int(m.group(4)) if m.group(4) is not None else 23
         minute = int(m.group(5)) if m.group(5) is not None else 59
+        ampm = m.group(6)
+        if ampm:
+            ampm_clean = ampm.lower().replace(".", "").strip()
+            if ampm_clean == "pm" and hour < 12:
+                hour += 12
+            elif ampm_clean == "am" and hour == 12:
+                hour = 0
         month = SPANISH_MONTHS.get(month_name)
         if month:
             try:
@@ -271,9 +280,9 @@ def parse_moodle_due_date(date_str: str) -> datetime | None:
             except ValueError:
                 pass
 
-    # English pattern: '16 October 2026, 12:00'
+    # English pattern 1: '16 October 2026, 12:00 [pm/am]'
     m2 = re.search(
-        r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})(?:[,\s]+(\d{1,2}):(\d{2}))?',
+        r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?:\s*([ap]\.?\s*m\.?))?)?',
         date_str,
         re.IGNORECASE
     )
@@ -283,6 +292,39 @@ def parse_moodle_due_date(date_str: str) -> datetime | None:
         year = int(m2.group(3))
         hour = int(m2.group(4)) if m2.group(4) is not None else 23
         minute = int(m2.group(5)) if m2.group(5) is not None else 59
+        ampm = m2.group(6)
+        if ampm:
+            ampm_clean = ampm.lower().replace(".", "").strip()
+            if ampm_clean == "pm" and hour < 12:
+                hour += 12
+            elif ampm_clean == "am" and hour == 12:
+                hour = 0
+        month = SPANISH_MONTHS.get(month_name)
+        if month:
+            try:
+                return datetime(year, month, day, hour, minute)
+            except ValueError:
+                pass
+
+    # English pattern 2: 'October 16, 2026, 12:00 [pm/am]'
+    m3 = re.search(
+        r'([a-zA-Z]+)\s+(\d{1,2}),?\s+(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?:\s*([ap]\.?\s*m\.?))?)?',
+        date_str,
+        re.IGNORECASE
+    )
+    if m3:
+        month_name = m3.group(1).lower()
+        day = int(m3.group(2))
+        year = int(m3.group(3))
+        hour = int(m3.group(4)) if m3.group(4) is not None else 23
+        minute = int(m3.group(5)) if m3.group(5) is not None else 59
+        ampm = m3.group(6)
+        if ampm:
+            ampm_clean = ampm.lower().replace(".", "").strip()
+            if ampm_clean == "pm" and hour < 12:
+                hour += 12
+            elif ampm_clean == "am" and hour == 12:
+                hour = 0
         month = SPANISH_MONTHS.get(month_name)
         if month:
             try:

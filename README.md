@@ -1,6 +1,52 @@
-# Bookish - Academic Automation Engine
+<p align="center">
+  <img src="bookish.png" alt="Bookish - Academic Automation Engine" width="100%">
+</p>
 
-Bookish is a CLI/TUI automation pipeline for university assignment management. It handles Moodle authentication, scrapes pending assignments from the calendar, extracts text from attachments (PDF/image OCR) and YouTube transcripts, generates Markdown drafts via Gemini AI or external agents, and compiles them into formatted academic PDFs with cover pages.
+# Bookish — Academic Automation Engine
+
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL-orange.svg)]()
+
+> **Bookish** is an autonomous CLI/TUI pipeline for university assignment management on Moodle. It automates authentication, performs smart differential scraping, filters out submitted/graded/overdue tasks, extracts content from multi-format attachments (PDF, OCR images, DOCX, XLSX, YouTube transcripts), generates high-grade academic drafts via Google Gemini or external agents (`opencode` + `tmux`), compiles publications into standardized academic PDFs with cover pages, and submits assignments directly to Moodle.
+
+---
+
+## Key Features
+
+- **Stylized Startup Dashboard**: 3D ASCII splash screen with the *"continuous improvement, every day."* subtitle, real-time stage progress bar, and automatic fallback to execution logs on error.
+- **Incremental Differential Scraping & Smart Caching**: Scrapes assignments instantly; reuses cached data unless the assignment title or description was modified by the professor. Force a full re-scrape anytime with `--refresh` / `--sync`.
+- **Smart Assignment Filtering**: Automatically detects and excludes:
+  - Tasks already submitted (*"Enviado para calificar"*) or graded (*"Calificado"*).
+  - Overdue/expired assignments based on parsed deadline timestamps.
+- **Universal Multi-Format Text Extraction**:
+  - **Word (`.docx`)**: Pure Python standard library extraction (`zipfile` + `xml.etree`), zero external dependencies.
+  - **Excel (`.xlsx`)**: Standard library extraction parsing shared strings and multi-sheet grids into readable Markdown tables.
+  - **PDF (`.pdf`)**: Native PyMuPDF text extraction with automatic fallback to **Tesseract OCR** for scanned documents.
+  - **Images (`.png`, `.jpg`, `.jpeg`, `.webp`)**: OCR text extraction via Tesseract.
+  - **YouTube Videos**: Auto-extracts transcripts (Spanish/English) from links embedded in assignment instructions.
+- **Interactive TUI Questionnaire**:
+  - Full keyboard-driven navigation (`j`/`k`, `Up`/`Down`, `PgUp`/`PgDn`).
+  - `Ctrl+O`: Inspect all extracted attachment texts in a full-screen, read-only Neovim/Vim buffer without leaving the TUI.
+- **Customizable AI Academic Persona**:
+  - Pre-fills a Neovim buffer with system instructions and prompt rules before AI generation.
+  - Enforces university-level software engineering student persona: natural cadence, no generic AI clichés (*"en resumen"*, *"cabe destacar"*), continuous narrative flow without unnecessary bullet points, and deep technical exposition.
+- **Agent Handoff Mode (`[H]`)**:
+  - Designed for complex programming tasks.
+  - Opens the task handoff specification in Neovim.
+  - Automatically copies the entire handoff prompt to your system clipboard (`clip.exe`, `xclip`, `xsel`, `wl-copy`).
+  - Detects the project directory from `- **Ruta del Proyecto:** <path>` and opens a new **`tmux` split pane** running **OpenCode** in that directory.
+- **Direct Moodle Assignment Submission (`[U]`)**:
+  - Automates Moodle's filemanager modal upload via Playwright headless Chromium.
+  - Upload directly from the assignment card view (`[U]`).
+  - Dedicated **Upload Dashboard** accessible on completion with single (`[1-9]`, `[Enter]`) and batch upload (`[T]`) modes.
+- **Session-Scoped Academic PDF Compilation**:
+  - Compiles only Markdown drafts generated in the current session.
+  - Standardized UCE institutional cover page with logo, faculty, student name, enrolment number, and due date.
+  - Times New Roman typography, 1.0-inch margins, Letter format, and Base64 image inlining.
+  - Automatically opens generated PDFs using the system viewer (`wslview`, `xdg-open`, or `open`).
+- **Completion Loop (`[V]` / `[U]` / `[Q]`)**:
+  - Return to the questionnaire (`[V] Volver`) from the first cached assignment without re-scraping.
 
 ---
 
@@ -12,106 +58,117 @@ cd bookish
 ./install.sh
 ```
 
-`install.sh` performs the following:
-1. Creates a Python virtual environment in `.venv/`.
-2. Installs the project as an editable package via `pip install -e .` (all deps defined in `pyproject.toml`).
-3. Downloads the Playwright Chromium browser binary.
-4. Checks for `tesseract` OCR binary (required for PDF/image text extraction).
-5. Symlinks the `bookish` wrapper to `$HOME/.local/bin/bookish`.
+### What `install.sh` Does:
+1. Validates system dependencies (Python 3.10+, Playwright Chromium, Tesseract OCR, clipboard utilities, document viewer).
+2. Sets up a dedicated Python virtual environment in `.venv/`.
+3. Installs the project in editable mode (`pip install -e .`).
+4. Runs an interactive configuration wizard to configure `.env`.
+5. Installs the Playwright Chromium browser binary.
+6. Symlinks `bookish` to `~/.local/bin/bookish` for global terminal access.
 
-After installation, run `bookish` from anywhere in your terminal.
+### System Dependencies (Debian / Ubuntu / WSL)
 
-### System Dependencies
+```bash
+# Optional: Tesseract OCR for scanned PDF/image text extraction
+sudo apt update && sudo apt install -y tesseract-ocr tesseract-ocr-spa
 
-- Python 3.10+
-- Tesseract OCR (optional, for PDF/image text extraction): `sudo apt install tesseract-ocr tesseract-ocr-spa`
+# Optional: Document viewer for WSL (auto-open PDFs on Windows)
+# wslview is typically included with wslu: sudo apt install wslu
+```
+
+---
+
+## Configuration
+
+Bookish automatically reads configuration from `.env` in the repository root or `~/.config/bookish/env`.
+
+| Variable | Description | Default |
+|---|---|---|
+| `BOOKISH_USERNAME` | Moodle username / ID for automatic authentication | *(None)* |
+| `BOOKISH_PASS` | Moodle password for automatic authentication | *(None)* |
+| `GEMINI_API_KEY` | Google Gemini API key for draft generation | *(None)* |
+| `BOOKISH_STUDENT_NAME` | Student full name for cover page | `Estudiante Universitario` |
+| `BOOKISH_STUDENT_ENROLMENT` | Student enrolment ID / matrícula | `2024-0000` |
+| `BOOKISH_OUTPUT_DIR` | Output folder for PDFs and PNGs | `/mnt/c/Users/<user>/Downloads/bookish` or `~/Downloads/bookish` |
+| `BOOKISH_MOODLE_URL` | Base Moodle institution URL | `https://moodle.uce.edu.do` |
 
 ---
 
 ## Usage
 
 ```bash
-# Run the full pipeline
+# Launch interactive pipeline
 bookish
 
-# Show version
+# Force a full differential re-sync from Moodle (bypassing cache)
+bookish --refresh
+# or
+bookish --sync
+
+# Show installed version
 bookish --version
 
-# Show help
+# Show CLI options
 bookish --help
 ```
 
-### Environment Variables
+---
 
-| Variable | Purpose |
-|---|---|
-| `GEMINI_API_KEY` | Google Gemini API key for AI draft generation |
-| `BOOKISH_USERNAME` | Moodle username for automatic login |
-| `BOOKISH_PASS` | Moodle password for automatic login |
-| `BOOKISH_OUTPUT_DIR` | Custom output directory (default: `/mnt/c/Users/frank/Downloads/bookish`) |
+## TUI Keyboard Shortcuts
+
+### Assignment Card View
+| Key | Action | Description |
+|:---:|---|---|
+| <kbd>Y</kbd> / <kbd>Enter</kbd> | **Borrador IA (PDF)** | Opens prompt in Neovim, generates Gemini draft, and compiles to PDF |
+| <kbd>M</kbd> | **Solo Markdown** | Generates AI draft in `data/drafts/` without compiling to PDF |
+| <kbd>P</kbd> | **Presentación PNG** | Renders institutional cover sheet as a standalone PNG |
+| <kbd>H</kbd> | **Agent Handoff** | Prepares context file in Neovim, copies to clipboard, splits tmux pane with OpenCode |
+| <kbd>U</kbd> | **Subir a Moodle** | Uploads the assignment's PDF directly to Moodle |
+| <kbd>N</kbd> | **Omitir** | Skips the current assignment |
+| <kbd>Q</kbd> | **Salir** | Pauses the questionnaire and opens the completion screen |
+| <kbd>Ctrl+O</kbd> | **Ver Adjuntos** | Opens all extracted attachment texts in read-only Neovim buffer |
+| <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>k</kbd> / <kbd>j</kbd> | **Desplazamiento** | Scrolls assignment instructions |
+| <kbd>PgUp</kbd> / <kbd>PgDn</kbd> | **Salto de Página** | Fast scrolls instructions |
+
+### Completion Screen
+| Key | Action | Description |
+|:---:|---|---|
+| <kbd>U</kbd> | **Subir Tareas** | Opens interactive upload dashboard |
+| <kbd>V</kbd> | **Volver** | Returns to the questionnaire starting from the first cached task |
+| <kbd>Q</kbd> | **Salir** | Closes Bookish |
+
+### Upload Dashboard
+| Key | Action | Description |
+|:---:|---|---|
+| <kbd>1</kbd> - <kbd>9</kbd> | **Selección Rápida** | Selects and uploads task by number |
+| <kbd>Enter</kbd> / <kbd>Espacio</kbd> | **Subir Seleccionada** | Uploads the currently highlighted task |
+| <kbd>T</kbd> | **Subir TODAS** | Batch uploads all assignments that have generated PDFs |
+| <kbd>C</kbd> / <kbd>Esc</kbd> / <kbd>Q</kbd> | **Cancelar** | Returns to completion screen |
 
 ---
 
-## Pipeline Architecture (7 Stages)
+## Agent Handoff (`[H]`) Workflow
 
-Bookish executes a sequential pipeline managed by `bookish_pkg/pipeline.py`:
+When an assignment requires real software implementation (e.g., coding projects, simulations, scripts):
 
 ```
-Stage 1  Authentication & Overlay Suppression      (scraper.py)
-Stage 2  Calendar Scraping & Attachment OCR         (scraper.py)
-Stage 3  Interactive TUI Questionnaire              (generator.py)
-Stage 4  External Editor Context Input              ($EDITOR / vim)
-Stage 5  Agent Handoff / Gemini Draft Generation    (pipeline.py / generator.py)
-Stage 6  Presentation PNG Rendering                 (converter.py)
-Stage 7  Session-Scoped PDF Compilation & Auto-Open (converter.py)
+[H] Selected in TUI
+       │
+       ▼
+Opens data/agent_handoff/<safe_title>.md in Neovim
+       │
+       ├── Set project path on line:  - **Ruta del Proyecto:** /path/to/project
+       ├── Add custom agent directives or requirements
+       └── Save and exit (:x or :wq)
+       │
+       ▼
+1. Entire handoff prompt is copied to system clipboard
+2. Route is extracted from the specified line
+3. A new tmux split pane opens in the detected directory executing OpenCode
+       │
+       ▼
+Paste prompt (Ctrl+V) into OpenCode and manage your coding session
 ```
-
-### Stage 1 -- Authentication & Overlay Suppression
-
-When `BOOKISH_USERNAME` and `BOOKISH_PASS` are set, launches a visible Chromium browser via Playwright, fills the Moodle login form, handles post-login modal popups and survey overlays (UCE-specific elements like `#qr-modal-aviso`, cookie banners, and viewport-blocking fixed elements), then saves the authenticated session cookies to `state.json` for reuse.
-
-### Stage 2 -- Calendar Scraping & Attachment OCR
-
-Loads the saved session, navigates to the Moodle monthly calendar, and extracts all unique assignment links (`mod/assign/view.php`). For each unsubmitted assignment, extracts:
-
-- Title, course code (from breadcrumbs), open/due dates
-- Assignment instructions/description from the page body
-- File attachments (PDFs, images) downloaded via authenticated session cookies, with text extracted using PyMuPDF; falls back to Tesseract OCR for scanned/image-based PDFs
-- YouTube video transcripts via `youtube-transcript-api` (Spanish/English auto-generated captions)
-
-Results are serialized to `data/assignments.json`.
-
-### Stage 3 -- Interactive TUI Questionnaire
-
-Presents each pending assignment in a scrollable Curses interface showing course code, title, due date, and instructions. Long attachment blocks are collapsed into compact summary tags. The user selects one action per assignment:
-
-| Key | Action |
-|---|---|
-| `Y` / Enter | Generate AI draft (with PDF conversion) |
-| `M` | Generate AI draft (Markdown only, no PDF) |
-| `P` | Render presentation cover sheet (PNG) |
-| `A` | Handoff to AGY agent |
-| `O` | Handoff to OpenCode agent |
-| `N` | Skip |
-| `Q` | Quit |
-
-### Stage 4 -- External Editor Context Input
-
-For actions `Y`, `M`, `A`, `O`, the TUI exits curses and opens `$EDITOR` (or `vim`) with a blank temporary `.md` file. The student writes any additional context, instructions, or corrections. This text is appended to the AI prompt or agent handoff file as high-priority student instructions.
-
-### Stage 5 -- Agent Handoff / Gemini Draft Generation
-
-**AI Draft Generation (Y/M):** Sends the assignment metadata, Moodle instructions, extracted attachment text, and student context to Gemini (`gemini-2.5-flash`) with system instructions that enforce academic tone, paragraph flow, and anti-AI-detection writing patterns. Includes exponential backoff retry for transient API errors.
-
-**Agent Handoff (A/O):** Generates a self-contained Markdown context file in `data/agent_handoff/` containing all assignment metadata, Moodle instructions, extracted text, student context, and `CONVERTER_FORMAT.md` rules. Launches `agy` or `opencode` with strict directives to read ONLY the handoff file and write the draft directly to `data/drafts/`.
-
-### Stage 6 -- Presentation PNG Rendering
-
-For assignments marked `P`, renders a standard UCE cover page (logo, faculty, student details) as a PNG screenshot using Playwright headless Chromium at 816x1056 viewport.
-
-### Stage 7 -- Session-Scoped PDF Compilation & Auto-Open
-
-Converts only Markdown files generated during the current session to PDF. Each `.md` file is preprocessed (Moodle link cleanup, legacy header normalization), converted to HTML via `markdown` with fenced code and table extensions, styled with the academic CSS template (Times New Roman, Letter format, 1-inch margins), images are inlined as Base64 data URIs, and rendered to PDF via Playwright Chromium. Each PDF is automatically opened with the system viewer.
 
 ---
 
@@ -119,38 +176,46 @@ Converts only Markdown files generated during the current session to PDF. Each `
 
 ```
 bookish/
-  bookish_pkg/           Python package (all source code)
-    __init__.py           Package marker + version
-    config.py             Centralized paths, URLs, constants, logging setup
-    utils.py              Shared utilities (sanitize_filename, cover page HTML, image inlining)
-    scraper.py            Moodle authentication, assignment scraping, OCR, YouTube transcripts
-    generator.py          Curses TUI questionnaire, Gemini API draft generation
-    converter.py          Markdown preprocessing, PDF/PNG rendering via Playwright
-    pipeline.py           Main 7-stage orchestrator, BookishLogger, agent handoff, CLI entry
-  data/                   Runtime data (gitignored)
-    drafts/               Generated Markdown drafts
-    attachments/           Downloaded assignment files
-    agent_handoff/         Context files for external AI agents
-    images/               Logo and image assets
-  CONVERTER_FORMAT.md     Formatting specification for Markdown-to-PDF conversion
-  pyproject.toml          Project metadata, dependencies, entry points
-  install.sh              One-command setup script
-  bookish                 Shell wrapper for global execution
+├── bookish.png                  # Project banner
+├── bookish                      # Shell wrapper for global execution
+├── install.sh                   # Automated setup script & dependency auditor
+├── pyproject.toml               # Package configuration & dependencies
+├── CONVERTER_FORMAT.md          # Academic styling specification for agents
+├── bookish_pkg/                 # Main Python package
+│   ├── __init__.py              # Version declaration
+│   ├── config.py                # Centralized paths, .env loader, environment constants
+│   ├── utils.py                 # Date parser, overdue validator, clipboard, image inliner
+│   ├── scraper.py               # Moodle Playwright scraper, attachment extraction, submission upload
+│   ├── generator.py             # Curses TUI questionnaire, Gemini client with exponential backoff
+│   ├── converter.py             # Markdown-to-PDF compiler, presentation PNG renderer
+│   └── pipeline.py              # Orchestrator, BookishLogger splash screen, tmux handoff, CLI entry
+└── data/                        # Runtime data (gitignored)
+    ├── assignments.json         # Scraped assignments cache
+    ├── attachments/             # Downloaded assignment files
+    ├── drafts/                  # Generated Markdown drafts
+    ├── agent_handoff/           # Generated agent context handoffs
+    └── images/                  # University logo and graphic assets
 ```
 
 ---
 
-## Standalone Module Usage
+## Standalone Module Execution
 
-### Converter (direct Markdown to PDF)
+Each component can be executed independently if needed:
 
 ```bash
-# Convert all drafts in data/drafts/
-.venv/bin/python3 -m bookish_pkg.converter
+# Convert a single markdown file to PDF
+python3 -m bookish_pkg.converter data/drafts/mi_tarea.md
 
-# Convert a specific file
-.venv/bin/python3 -m bookish_pkg.converter /path/to/file.md
+# Convert all markdown files in data/drafts/
+python3 -m bookish_pkg.converter
 
-# Convert a specific file to a specific output
-.venv/bin/python3 -m bookish_pkg.converter /path/to/file.md /path/to/output.pdf
+# Run scraper independently
+python3 -m bookish_pkg.scraper
 ```
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

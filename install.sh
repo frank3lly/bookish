@@ -47,19 +47,19 @@ else
     echo -e "  ! Document viewer: ${YELLOW}None detected (wslview/xdg-open/open). Generated files won't auto-open.${RESET}"
 fi
 
-# Check External AI Agents (AGY / OpenCode)
-echo -e "\n${BOLD}Checking External AI Agent CLI Tools (for handoff options [A] / [O]):${RESET}"
+# Check External AI Tools (OpenCode / tmux / clipboard)
+echo -e "\n${BOLD}Checking Agent Handoff Tools (for option [H]):${RESET}"
 
-if command -v agy &>/dev/null; then
-    echo -e "  ✓ AGY CLI (Antigravity): ${GREEN}Detected${RESET}"
+if command -v tmux &>/dev/null; then
+    echo -e "  ✓ tmux: ${GREEN}Detected${RESET}"
 else
-    echo -e "  - AGY CLI (Antigravity): ${YELLOW}Not detected${RESET} (Option [A] in TUI will require installing 'agy')"
+    echo -e "  - tmux: ${YELLOW}Not detected${RESET} (Recommended for automatic split-pane OpenCode execution)"
 fi
 
 if command -v opencode &>/dev/null; then
     echo -e "  ✓ OpenCode CLI: ${GREEN}Detected${RESET}"
 else
-    echo -e "  - OpenCode CLI: ${YELLOW}Not detected${RESET} (Option [O] in TUI will require installing 'opencode')"
+    echo -e "  - OpenCode CLI: ${YELLOW}Not detected${RESET} (Agent handoff will look for 'opencode')"
 fi
 
 echo ""

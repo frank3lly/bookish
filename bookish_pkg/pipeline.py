@@ -246,7 +246,7 @@ def create_handoff_file(item):
     due_date = item.get("due_date", "Sin fecha límite")
     description = item.get("description", "")
     student_name = item.get("student_name", STUDENT_NAME)
-    student_enrrolment = item.get("student_enrrolment", STUDENT_ENROLMENT)
+    student_enrolment = item.get("student_enrolment") or item.get("student_enrrolment") or STUDENT_ENROLMENT
     additional_info = item.get("additional_info", "")
     safe_title = sanitize_filename(title)
     output_draft = os.path.join(DRAFTS_DIR, f"{safe_title}.md")
@@ -274,7 +274,7 @@ def create_handoff_file(item):
         f"- **Asignatura:** {course_code}\n"
         f"- **Tarea:** {title}\n"
         f"- **Estudiante:** {student_name}\n"
-        f"- **Matrícula:** {student_enrrolment}\n"
+        f"- **Matrícula:** {student_enrolment}\n"
         f"- **Fecha Límite:** {due_date}\n"
         f"- **Ruta del Proyecto:** \n\n"
         f"---\n\n"
@@ -383,17 +383,27 @@ launch_agent = handle_agent_handoff
 def find_assignment_pdf(assignment):
     """
     Looks for the generated PDF file for a given assignment item.
-    Checks DEFAULT_OUTPUT_DIR and PDFS_DIR with case-insensitivity.
+    Checks explicit paths, DEFAULT_OUTPUT_DIR, and PDFS_DIR with case-insensitivity.
     Returns the absolute path if found, or None.
     """
+    # 1. Check if assignment dictionary already has an explicit valid pdf_path
+    explicit_path = assignment.get("pdf_path")
+    if explicit_path and os.path.isfile(explicit_path) and os.path.getsize(explicit_path) > 0:
+        return os.path.abspath(explicit_path)
+
     title = assignment.get("title", "")
     if not title:
         return None
     safe_title = sanitize_filename(title).lower()
 
+    # 2. Check by filename in output directories
     for search_dir in (DEFAULT_OUTPUT_DIR, PDFS_DIR):
         if not os.path.isdir(search_dir):
             continue
+        direct_pdf = os.path.join(search_dir, f"{safe_title}.pdf")
+        if os.path.isfile(direct_pdf) and os.path.getsize(direct_pdf) > 0:
+            return direct_pdf
+
         for fname in os.listdir(search_dir):
             if fname.lower().endswith(".pdf"):
                 base = os.path.splitext(fname)[0].lower()
@@ -881,7 +891,7 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
                         course_name = item.get("course_name", "")
                         due_date = item.get("due_date", "Sin fecha límite")
                         student_name = item.get("student_name", STUDENT_NAME)
-                        student_enrrolment = item.get("student_enrrolment", STUDENT_ENROLMENT)
+                        student_enrolment = item.get("student_enrolment") or item.get("student_enrrolment") or STUDENT_ENROLMENT
                         additional_info = item.get("additional_info", "")
                         output_file = item["md_file"]
                         tag = "Borrador PDF" if is_pdf_target else "Solo Markdown"
@@ -896,7 +906,7 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
                                 course_code=course_code,
                                 title=title,
                                 student_name=student_name,
-                                student_enrolment=student_enrrolment,
+                                student_enrolment=student_enrolment,
                                 due_date=due_date,
                             )
                             with open(output_file, "w", encoding="utf-8") as f:
