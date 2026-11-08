@@ -80,6 +80,117 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             border: 1px solid #cccccc;
         }}
 
+        /* Image alignment utilities */
+        .center, .img-center {{
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            text-align: center;
+        }}
+
+        .left {{
+            float: left;
+            margin-right: 1rem;
+            margin-bottom: 0.5rem;
+        }}
+
+        .right {{
+            float: right;
+            margin-left: 1rem;
+            margin-bottom: 0.5rem;
+        }}
+
+        /* Proportional image widths */
+        .w-25 {{
+            width: 25%;
+            max-width: 25%;
+            height: auto;
+        }}
+
+        .w-50 {{
+            width: 50%;
+            max-width: 50%;
+            height: auto;
+        }}
+
+        .w-75 {{
+            width: 75%;
+            max-width: 75%;
+            height: auto;
+        }}
+
+        .w-100 {{
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+        }}
+
+        /* Absolute scale boundaries */
+        .small {{
+            max-height: 2.2in;
+            width: auto;
+            object-fit: contain;
+        }}
+
+        .medium {{
+            max-height: 4.0in;
+            width: auto;
+            object-fit: contain;
+        }}
+
+        .large {{
+            max-height: 6.5in;
+            width: auto;
+            object-fit: contain;
+        }}
+
+        /* Academic figures and captions */
+        figure {{
+            margin: 1.2rem auto;
+            text-align: center;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }}
+
+        figure img {{
+            display: block;
+            margin: 0 auto;
+        }}
+
+        figcaption {{
+            font-size: 10pt;
+            font-style: italic;
+            color: #444444;
+            margin-top: 0.4rem;
+        }}
+
+        /* Comparative two-column image grid */
+        .image-grid-2, .image-row {{
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 1rem auto;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }}
+
+        .image-grid-2 figure, .image-grid-2 img,
+        .image-row figure, .image-row img {{
+            flex: 1;
+            max-width: 48%;
+        }}
+
+        /* Page breaks */
+        .page-break-before {{
+            page-break-before: always;
+            break-before: page;
+        }}
+
+        .page-break-after {{
+            page-break-after: always;
+            break-after: page;
+        }}
+
         .cover-page h1 {{
             font-family: Arial, Helvetica, sans-serif;
             font-size: 22pt;
