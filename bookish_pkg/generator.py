@@ -10,7 +10,7 @@ import tempfile
 import subprocess
 import logging
 
-from bookish_pkg.config import ASSIGNMENTS_FILE, DRAFTS_DIR
+from bookish_pkg.config import ASSIGNMENTS_FILE, DRAFTS_DIR, DEFAULT_GEMINI_MODEL
 from bookish_pkg.utils import sanitize_filename
 
 log = logging.getLogger(__name__)
@@ -189,7 +189,7 @@ def generate_assignment_draft(client, title, description, course_code, course_na
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=DEFAULT_GEMINI_MODEL,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
