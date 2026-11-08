@@ -56,6 +56,7 @@ def open_file_async(file_path: str) -> None:
 def open_draft_in_editor(file_path: str) -> bool:
     """
     Opens the generated Markdown draft in Neovim (or $EDITOR / vim) for manual review.
+    Loads floating documentation support via temporary Lua script if nvim is used.
     Pauses curses before opening, restores afterwards.
     Returns True if the editor exited with code 0 (:x or :wq).
     Returns False if aborted (:cq or error).
@@ -66,9 +67,25 @@ def open_draft_in_editor(file_path: str) -> bool:
     except Exception:
         pass
 
+    import tempfile
+    from bookish_pkg.docs import generate_nvim_docs_script
+
+    temp_lua_path = None
     editor = "nvim" if shutil.which("nvim") else (os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vim")
+
     try:
-        proc = subprocess.run([editor, file_path])
+        cmd = [editor]
+        if os.path.basename(editor) == "nvim":
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".lua", prefix="bookish_docs_", mode="w", delete=False, encoding="utf-8") as tf:
+                    tf.write(generate_nvim_docs_script())
+                    temp_lua_path = tf.name
+                cmd.extend(["-c", f"luafile {temp_lua_path}"])
+            except Exception as e:
+                log.debug(f"Could not prepare Neovim docs script: {e}")
+
+        cmd.append(file_path)
+        proc = subprocess.run(cmd)
         return proc.returncode == 0
     except FileNotFoundError:
         editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vim"
@@ -81,6 +98,12 @@ def open_draft_in_editor(file_path: str) -> bool:
     except Exception as e:
         log.error(f"Error opening editor '{editor}': {e}")
         return False
+    finally:
+        if temp_lua_path and os.path.exists(temp_lua_path):
+            try:
+                os.remove(temp_lua_path)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
