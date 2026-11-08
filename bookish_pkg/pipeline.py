@@ -996,6 +996,10 @@ def main():
             except ImportError:
                 print("bookish (version unknown)")
             return
+        elif arg in ('docs', '--docs', 'cheat', 'cheatsheet'):
+            from bookish_pkg.docs import get_converter_cheatsheet
+            print(get_converter_cheatsheet())
+            return
         elif arg in ('--help', '-h'):
             print("Usage: bookish [options]")
             print("")
@@ -1003,6 +1007,7 @@ def main():
             print("")
             print("Options:")
             print("  --refresh, -r, --sync  Force full re-scrape of all assignments from Moodle")
+            print("  docs, --docs, cheat    Show converter formatting cheat sheet and exit")
             print("  --version, -v          Show version and exit")
             print("  --help, -h             Show this help and exit")
             print("")
