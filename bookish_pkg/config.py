@@ -37,6 +37,7 @@ for _env_path in _env_candidates:
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 DRAFTS_DIR = os.path.join(DATA_DIR, "drafts")
 ATTACHMENTS_DIR = os.path.join(DATA_DIR, "attachments")
+ATTACHMENTS_MEDIA_DIR = os.path.join(DATA_DIR, "attachments_media")
 HANDOFF_DIR = os.path.join(DATA_DIR, "agent_handoff")
 ASSIGNMENTS_FILE = os.path.join(DATA_DIR, "assignments.json")
 STATE_FILE = os.path.join(PROJECT_ROOT, "state.json")

@@ -2,10 +2,12 @@ import re
 import os
 import json
 import time
+import shutil
+import zipfile
 import logging
 
 from bookish_pkg.config import (
-    STATE_FILE, DATA_DIR, ASSIGNMENTS_FILE, ATTACHMENTS_DIR,
+    STATE_FILE, DATA_DIR, ASSIGNMENTS_FILE, ATTACHMENTS_DIR, ATTACHMENTS_MEDIA_DIR,
     BASE_URL, LOGIN_URL, CALENDAR_URL, MOODLE_SESSION_STORAGE_JS,
     STUDENT_NAME, STUDENT_ENROLMENT
 )
@@ -37,6 +39,83 @@ def extract_docx_text(file_path):
     except Exception as e:
         log.warning(f"Failed to extract DOCX text from '{file_path}': {e}")
         return ""
+
+
+def extract_docx_images(file_path: str, output_dir: str) -> list[str]:
+    """
+    Extracts images embedded in a Word (.docx) file (from word/media/)
+    and saves them to output_dir. Returns a list of absolute file paths.
+    """
+    extracted_paths = []
+    if not os.path.exists(file_path):
+        return extracted_paths
+
+    os.makedirs(output_dir, exist_ok=True)
+    try:
+        with zipfile.ZipFile(file_path, "r") as z:
+            media_files = [f for f in z.namelist() if f.startswith("word/media/") and not f.endswith("/")]
+            for media in media_files:
+                filename = os.path.basename(media)
+                if not filename:
+                    continue
+                dest_path = os.path.join(output_dir, filename)
+                with open(dest_path, "wb") as f_out:
+                    f_out.write(z.read(media))
+                extracted_paths.append(os.path.abspath(dest_path))
+    except Exception as e:
+        log.warning(f"Error extracting images from DOCX '{file_path}': {e}")
+
+    return extracted_paths
+
+
+def extract_pdf_images(file_path: str, output_dir: str) -> list[str]:
+    """
+    Extracts embedded images from a PDF file using fitz (pymupdf)
+    and saves them to output_dir. Returns a list of absolute file paths.
+    """
+    try:
+        import fitz
+    except ImportError:
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            log.warning("pymupdf (fitz) not available for PDF image extraction.")
+            return []
+
+    extracted_paths = []
+    if not os.path.exists(file_path):
+        return extracted_paths
+
+    os.makedirs(output_dir, exist_ok=True)
+    try:
+        doc = fitz.open(file_path)
+        seen_xrefs = set()
+        for pno in range(len(doc)):
+            page = doc[pno]
+            image_list = page.get_images()
+            for img_info in image_list:
+                xref = img_info[0]
+                if xref in seen_xrefs:
+                    continue
+                seen_xrefs.add(xref)
+                try:
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image.get("image")
+                    image_ext = base_image.get("ext", "png")
+                    if not image_bytes:
+                        continue
+                    base_name = os.path.splitext(os.path.basename(file_path))[0]
+                    img_filename = f"{base_name}_img_p{pno + 1}_xref{xref}.{image_ext}"
+                    dest_path = os.path.join(output_dir, img_filename)
+                    with open(dest_path, "wb") as f_out:
+                        f_out.write(image_bytes)
+                    extracted_paths.append(os.path.abspath(dest_path))
+                except Exception as img_err:
+                    log.warning(f"Failed to extract image xref {xref} from '{file_path}': {img_err}")
+    except Exception as e:
+        log.warning(f"Error extracting images from PDF '{file_path}': {e}")
+
+    return extracted_paths
 
 
 def extract_xlsx_text(file_path):
@@ -458,6 +537,9 @@ def get_assignment_details(page, assignment_url, fallback_title="Crea un titulo 
                 description = text
                 break
 
+    task_media_dir = os.path.join(ATTACHMENTS_MEDIA_DIR, sanitize_filename(title))
+    attached_images = []
+
     # 4.5 Extract & Download attached files
     try:
         os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
@@ -538,8 +620,36 @@ def get_assignment_details(page, assignment_url, fallback_title="Crea un titulo 
                         f"[FIN ADJUNTO: {clean_filename}]\n"
                     )
                     description += attachment_block
+
+                # Extract images from docx or pdf
+                if ext == ".docx":
+                    imgs = extract_docx_images(attachment_file, task_media_dir)
+                    attached_images.extend(imgs)
+                elif ext == ".pdf":
+                    imgs = extract_pdf_images(attachment_file, task_media_dir)
+                    attached_images.extend(imgs)
+                elif ext in (".png", ".jpg", ".jpeg", ".webp"):
+                    os.makedirs(task_media_dir, exist_ok=True)
+                    dest_img = os.path.join(task_media_dir, os.path.basename(attachment_file))
+                    if os.path.abspath(attachment_file) != os.path.abspath(dest_img):
+                        shutil.copy2(attachment_file, dest_img)
+                    attached_images.append(os.path.abspath(dest_img))
             else:
                 log.warning(f"Failed to download attachment '{clean_filename}' after {max_retries} attempts, skipping.")
+
+        if attached_images:
+            seen_imgs = set()
+            unique_imgs = []
+            for img in attached_images:
+                if img not in seen_imgs:
+                    seen_imgs.add(img)
+                    unique_imgs.append(img)
+            attached_images = unique_imgs
+
+            img_summary = f"\n\n[FIGURAS Y ESQUEMAS ADJUNTOS: Se extrajeron {len(attached_images)} imagen(es) técnica(s) para análisis visual]\n"
+            for img in attached_images:
+                img_summary += f"- {os.path.basename(img)}\n"
+            description += img_summary
     except PlaywrightError as e:
         log.warning(f"Error extracting attachments for assignment: {e}")
     except OSError as e:
@@ -594,7 +704,7 @@ def get_assignment_details(page, assignment_url, fallback_title="Crea un titulo 
         except PlaywrightError as e:
             log.debug(f"Playwright error checking submission fallback: {e}")
 
-    return title, description, course_code, open_date, due_date, is_submitted
+    return title, description, course_code, open_date, due_date, is_submitted, attached_images
 
 
 def check_assignment_is_submitted(context, url: str) -> bool:
@@ -803,12 +913,39 @@ def load_session_and_scrape(force_refresh: bool = False):
                                 log.info(f"Omitiendo tarea ya entregada/calificada: {cached_item.get('title')}")
                                 continue
 
+                            if not cached_item.get("attached_images"):
+                                c_title = cached_item.get("title", "")
+                                c_desc = cached_item.get("description", "")
+                                c_media_dir = os.path.join(ATTACHMENTS_MEDIA_DIR, sanitize_filename(c_title))
+                                c_images = []
+                                if os.path.exists(ATTACHMENTS_DIR):
+                                    for fname in os.listdir(ATTACHMENTS_DIR):
+                                        if fname.endswith(".extracted.txt"):
+                                            continue
+                                        if fname in c_desc:
+                                            fpath = os.path.join(ATTACHMENTS_DIR, fname)
+                                            if fname.lower().endswith(".docx"):
+                                                c_images.extend(extract_docx_images(fpath, c_media_dir))
+                                            elif fname.lower().endswith(".pdf"):
+                                                c_images.extend(extract_pdf_images(fpath, c_media_dir))
+                                            elif fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                                                os.makedirs(c_media_dir, exist_ok=True)
+                                                dest = os.path.join(c_media_dir, fname)
+                                                if os.path.abspath(fpath) != os.path.abspath(dest):
+                                                    shutil.copy2(fpath, dest)
+                                                c_images.append(os.path.abspath(dest))
+                                if c_images:
+                                    seen_c = set()
+                                    cached_item["attached_images"] = [x for x in c_images if not (x in seen_c or seen_c.add(x))]
+                                else:
+                                    cached_item["attached_images"] = []
+
                             scraped_data.append(cached_item)
                             reused_count += 1
                             log.debug(f"Reusando de caché: {cached_item.get('title')}")
                         else:
                             try:
-                                title, description, course_code, open_date, due_date, is_submitted = get_assignment_details(
+                                title, description, course_code, open_date, due_date, is_submitted, attached_images = get_assignment_details(
                                     page, url, fallback_title=name
                                 )
                                 if is_submitted:
@@ -835,6 +972,7 @@ def load_session_and_scrape(force_refresh: bool = False):
                                     "student_enrolment": student_enrolment,
                                     "student_enrrolment": student_enrolment,
                                     "scraped_at": time.time(),
+                                    "attached_images": attached_images,
                                 }
                                 scraped_data.append(new_item)
                                 scraped_count += 1
