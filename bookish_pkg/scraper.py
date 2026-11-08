@@ -74,10 +74,10 @@ def extract_pdf_images(file_path: str, output_dir: str) -> list[str]:
     and saves them to output_dir. Returns a list of absolute file paths.
     """
     try:
-        import fitz
+        import pymupdf as fitz
     except ImportError:
         try:
-            import pymupdf as fitz
+            import fitz
         except ImportError:
             log.warning("pymupdf (fitz) not available for PDF image extraction.")
             return []

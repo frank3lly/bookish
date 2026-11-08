@@ -77,7 +77,7 @@ STUDENT_ENROLMENT = os.environ.get("BOOKISH_STUDENT_ENROLMENT", "2024-0000")
 # ---------------------------------------------------------------------------
 # Gemini AI Configuration
 # ---------------------------------------------------------------------------
-DEFAULT_GEMINI_MODEL = os.environ.get("BOOKISH_GEMINI_MODEL", "gemini-pro-latest")
+DEFAULT_GEMINI_MODEL = os.environ.get("BOOKISH_GEMINI_MODEL", "gemini-2.5-pro")
 
 # ---------------------------------------------------------------------------
 # Moodle overlay suppression JS (reused by login and scraper)

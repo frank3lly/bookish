@@ -9,6 +9,10 @@ import textwrap
 import tempfile
 import subprocess
 import logging
+import warnings
+
+# Suppress external library deprecation and runtime warnings that corrupt curses TUI
+warnings.filterwarnings("ignore")
 
 from bookish_pkg.config import ASSIGNMENTS_FILE, DRAFTS_DIR, DEFAULT_GEMINI_MODEL
 from bookish_pkg.utils import sanitize_filename

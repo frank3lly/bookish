@@ -7,6 +7,10 @@ import shutil
 import curses
 import subprocess
 import logging
+import warnings
+
+# Suppress external library deprecation and runtime warnings that corrupt curses TUI
+warnings.filterwarnings("ignore")
 
 from bookish_pkg.config import (
     DRAFTS_DIR, PDFS_DIR, PRESENTATIONS_DIR, DEFAULT_OUTPUT_DIR,

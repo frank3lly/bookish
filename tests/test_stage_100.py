@@ -17,8 +17,8 @@ from bookish_pkg.utils import open_draft_in_editor
 class TestStage100(unittest.TestCase):
 
     def test_default_gemini_model(self):
-        """Validar que el modelo por defecto resuelto sea gemini-pro-latest."""
-        self.assertEqual(DEFAULT_GEMINI_MODEL, "gemini-pro-latest")
+        """Validar que el modelo por defecto resuelto sea gemini-2.5-pro."""
+        self.assertEqual(DEFAULT_GEMINI_MODEL, "gemini-2.5-pro")
 
     def test_docx_image_extraction(self):
         """Validar extracción de imágenes desde archivo docx existente."""
@@ -107,7 +107,7 @@ class TestStage100(unittest.TestCase):
             contents = call_kwargs["contents"]
             self.assertEqual(len(contents), 2)
             self.assertIsInstance(contents[1], types.Part)
-            self.assertEqual(call_kwargs["model"], "gemini-pro-latest")
+            self.assertEqual(call_kwargs["model"], "gemini-2.5-pro")
         finally:
             if os.path.exists(img_path):
                 os.remove(img_path)
