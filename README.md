@@ -119,15 +119,15 @@ bookish --help
 ### Assignment Card View
 | Key | Action | Description |
 |:---:|---|---|
-| <kbd>Y</kbd> / <kbd>Enter</kbd> | **Borrador IA (PDF)** | Opens prompt in Neovim, generates Gemini draft, and compiles to PDF |
-| <kbd>M</kbd> | **Solo Markdown** | Generates AI draft in `data/drafts/` without compiling to PDF |
+| <kbd>Y</kbd> / <kbd>Enter</kbd> | **Borrador IA (PDF)** | Opens prompt in Neovim, generates Gemini draft, opens draft in Neovim for editing, and compiles to PDF |
 | <kbd>P</kbd> | **Presentación PNG** | Renders institutional cover sheet as a standalone PNG |
 | <kbd>H</kbd> | **Agent Handoff** | Prepares context file in Neovim, copies to clipboard, splits tmux pane with OpenCode |
 | <kbd>U</kbd> | **Subir a Moodle** | Uploads the assignment's PDF directly to Moodle |
 | <kbd>N</kbd> | **Omitir** | Skips the current assignment |
 | <kbd>Q</kbd> | **Salir** | Pauses the questionnaire and opens the completion screen |
 | <kbd>Ctrl+O</kbd> | **Ver Adjuntos** | Opens all extracted attachment texts in read-only Neovim buffer |
-| <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>k</kbd> / <kbd>j</kbd> | **Desplazamiento** | Scrolls assignment instructions |
+| <kbd>k</kbd> / <kbd>j</kbd> | **Navegación Tareas** | Moves backward / forward through the assignments list |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | **Desplazamiento** | Scrolls assignment instructions |
 | <kbd>PgUp</kbd> / <kbd>PgDn</kbd> | **Salto de Página** | Fast scrolls instructions |
 
 ### Completion Screen

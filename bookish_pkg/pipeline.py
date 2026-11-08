@@ -792,17 +792,29 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
 
         approved_drafts = []
         approved_presentations = []
-        approved_markdown_only = []
         agent_handoffs = []
         session_generated_mds = []
         total_pending = len(pending_items)
         user_cancelled = False
 
-        for idx, item in enumerate(pending_items, 1):
-            action, additional_info = curses_prompt_assignment(stdscr, item, idx, total_pending)
+        decisions = {}
+        idx = 0
+        while idx < total_pending:
+            item = pending_items[idx]
+            action, additional_info = curses_prompt_assignment(stdscr, item, idx + 1, total_pending)
             if action == "quit":
                 user_cancelled = True
                 break
+            elif action == "prev":
+                if idx > 0:
+                    idx -= 1
+                continue
+            elif action == "next":
+                if idx < total_pending - 1:
+                    idx += 1
+                else:
+                    idx += 1
+                continue
             elif action == "upload":
                 title = item.get("title", "Sin Título")
                 pdf_path = find_assignment_pdf(item)
@@ -819,23 +831,30 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
                 else:
                     logger.log(f"✗ Fallo al subir '{title}': {msg}", "error")
                     time.sleep(2.5)
-            elif action == "yes":
-                item["additional_info"] = additional_info
-                approved_drafts.append(item)
-            elif action == "markdown_only":
-                item["additional_info"] = additional_info
-                approved_markdown_only.append(item)
-            elif action == "presentation":
-                approved_presentations.append(item)
-            elif action in ("agent_handoff", "agent_agy", "agent_opencode"):
-                item["additional_info"] = additional_info
-                title = item.get("title", "Sin Título")
-                logger.log(f"Iniciando Agent Handoff para '{title}'...", "info")
-                handoff_path, output_draft = create_handoff_file(item)
-                handle_agent_handoff(stdscr, handoff_path, output_draft, title)
-                agent_handoffs.append(item)
-                if os.path.exists(output_draft):
-                    session_generated_mds.append(output_draft)
+                idx += 1
+            elif action in ("yes", "presentation", "agent_handoff", "agent_agy", "agent_opencode", "no"):
+                decisions[idx] = (action, additional_info)
+                if action in ("agent_handoff", "agent_agy", "agent_opencode"):
+                    item["additional_info"] = additional_info
+                    title = item.get("title", "Sin Título")
+                    logger.log(f"Iniciando Agent Handoff para '{title}'...", "info")
+                    handoff_path, output_draft = create_handoff_file(item)
+                    handle_agent_handoff(stdscr, handoff_path, output_draft, title)
+                    if os.path.exists(output_draft):
+                        session_generated_mds.append(output_draft)
+                idx += 1
+
+        for i in range(total_pending):
+            if i in decisions:
+                act, add_info = decisions[i]
+                item = pending_items[i]
+                if act == "yes":
+                    item["additional_info"] = add_info
+                    approved_drafts.append(item)
+                elif act == "presentation":
+                    approved_presentations.append(item)
+                elif act in ("agent_handoff", "agent_agy", "agent_opencode"):
+                    agent_handoffs.append(item)
 
         if user_cancelled:
             logger.log("Cuestionario interrumpido por el usuario.", "warn")
@@ -849,8 +868,6 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
         summary_parts = []
         if approved_drafts:
             summary_parts.append(f"{len(approved_drafts)} borradores (PDF)")
-        if approved_markdown_only:
-            summary_parts.append(f"{len(approved_markdown_only)} solo-Markdown")
         if approved_presentations:
             summary_parts.append(f"{len(approved_presentations)} presentaciones")
         if agent_handoffs:
@@ -872,9 +889,8 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
                     logger.log(f"Error renderizando presentación para '{title}': {e}", "error")
 
         # Step 5: AI Drafts
-        all_ai_items = approved_drafts + approved_markdown_only
-        if all_ai_items:
-            logger.log(f"[5/6] Generando {len(all_ai_items)} borrador(es) con IA...", "step")
+        if approved_drafts:
+            logger.log(f"[5/6] Generando {len(approved_drafts)} borrador(es) con IA...", "step")
             gemini_key = os.environ.get("GEMINI_API_KEY")
             if not gemini_key:
                 logger.log("Error: GEMINI_API_KEY no está configurada en el entorno.", "error")
@@ -883,8 +899,7 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
                 try:
                     import google.genai as _genai
                     client = _genai.Client()
-                    for item in all_ai_items:
-                        is_pdf_target = item in approved_drafts
+                    for item in approved_drafts:
                         title = item.get("title", "Sin Título")
                         description = item.get("description", "")
                         course_code = item.get("course_code", "")
@@ -894,8 +909,7 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
                         student_enrolment = item.get("student_enrolment") or item.get("student_enrrolment") or STUDENT_ENROLMENT
                         additional_info = item.get("additional_info", "")
                         output_file = item["md_file"]
-                        tag = "Borrador PDF" if is_pdf_target else "Solo Markdown"
-                        logger.log(f"Generando {tag} para '{title}'...", "info")
+                        logger.log(f"Generando borrador para '{title}'...", "info")
                         try:
                             draft_content = generate_assignment_draft(
                                 client, title, description, course_code, course_name, due_date,
@@ -911,11 +925,15 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
                             )
                             with open(output_file, "w", encoding="utf-8") as f:
                                 f.write(header + "\n\n" + draft_content)
-                            logger.log(f"Guardado borrador Markdown ({tag}): {os.path.basename(output_file)}", "success")
-                            if is_pdf_target:
-                                session_generated_mds.append(output_file)
+                            logger.log(f"Guardado borrador Markdown: {os.path.basename(output_file)}", "success")
+                            session_generated_mds.append(output_file)
                         except Exception as e:
                             logger.log(f"Error al generar borrador para '{title}': {e}", "error")
+                except ImportError:
+                    logger.log("Error: google-genai no está instalado.", "error")
+                    time.sleep(2)
+                except Exception as e:
+                    logger.log(f"Error inicializando cliente Gemini: {e}", "error")
                 except ImportError:
                     logger.log("Error: google-genai no está instalado.", "error")
                     time.sleep(2)

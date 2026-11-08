@@ -330,7 +330,7 @@ def curses_prompt_assignment(stdscr, item, index, total):
                 stdscr.addstr(7 + i, 3, wrapped_lines[line_idx][:width-4])
                 
         if len(wrapped_lines) > desc_height:
-            indicator = f" [Líneas {scroll_pos+1}-{min(scroll_pos+desc_height, len(wrapped_lines))} de {len(wrapped_lines)}] [up/down para subir/bajar] "
+            indicator = f" [Líneas {scroll_pos+1}-{min(scroll_pos+desc_height, len(wrapped_lines))} de {len(wrapped_lines)}] [↑/↓ scroll | J/K tareas] "
             stdscr.addstr(6, max(20, width - len(indicator) - 2), indicator, curses.A_DIM)
             
         footer_y = height - 2
@@ -340,8 +340,6 @@ def curses_prompt_assignment(stdscr, item, index, total):
         stdscr.addstr(action_y, 2, "[")
         stdscr.addstr("Y", curses.color_pair(3) | curses.A_BOLD)
         stdscr.addstr("] Borrador IA  [")
-        stdscr.addstr("M", curses.color_pair(3) | curses.A_BOLD)
-        stdscr.addstr("] Solo MD  [")
         stdscr.addstr("P", curses.color_pair(3) | curses.A_BOLD)
         stdscr.addstr("] Presentación  [")
         stdscr.addstr("H", curses.color_pair(3) | curses.A_BOLD)
@@ -356,10 +354,14 @@ def curses_prompt_assignment(stdscr, item, index, total):
         stdscr.refresh()
         ch = stdscr.getch()
         
-        if ch in [curses.KEY_UP, ord('k')]:
+        if ch == curses.KEY_UP:
             if scroll_pos > 0: scroll_pos -= 1
-        elif ch in [curses.KEY_DOWN, ord('j')]:
+        elif ch == curses.KEY_DOWN:
             if scroll_pos < max_scroll: scroll_pos += 1
+        elif ch in [ord('k'), ord('K')]:
+            return "prev", ""
+        elif ch in [ord('j'), ord('J')]:
+            return "next", ""
         elif ch == curses.KEY_PPAGE:
             scroll_pos = max(0, scroll_pos - desc_height)
         elif ch == curses.KEY_NPAGE:
@@ -392,11 +394,6 @@ def curses_prompt_assignment(stdscr, item, index, total):
             if custom_prompt is None:
                 continue
             return "yes", custom_prompt
-        elif ch in [ord('m'), ord('M')]:
-            custom_prompt = open_prompt_editor(stdscr, item)
-            if custom_prompt is None:
-                continue
-            return "markdown_only", custom_prompt
         elif ch in [ord('p'), ord('P')]:
             return "presentation", ""
         elif ch in [ord('h'), ord('H'), ord('a'), ord('A'), ord('o'), ord('O')]:
