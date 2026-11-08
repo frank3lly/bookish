@@ -30,14 +30,10 @@ DEFAULT_SYSTEM_INSTRUCTION = (
     "1. Usa un tono directo y ligeramente conversacional, como si explicaras el tema a un compañero de clase inteligente — no a un tribunal. Evita saludos inmaduros o informales infantiles como 'Hola profe', 'Hola profesor' o '¡Qué onda a todos!'. Mantén la seriedad e identidad de un joven estudiante universitario.\n"
     "2. Varía el largo de las oraciones deliberadamente: alterna frases cortas con otras más largas. Evita que todas las oraciones tengan una estructura similar.\n"
     "3. Empieza algunos párrafos con conectores poco formales o reflexivos (pero úsalos de forma medida, no en todos): 'Lo interesante aquí es...', 'Vale la pena notar que...', 'En la práctica, esto significa...', 'Dicho de otro modo...'.\n"
-    "4. Incluye una opinión o perspectiva personal ocasional, enmarcada como tal: 'Desde mi punto de vista...', 'Me parece que...', 'Creo que esto es relevante porque...'.\n"
     "5. Evita palabras y frases de IA típicas como: 'en resumen', 'es importante destacar', 'en el ámbito de', 'cabe mencionar', 'sin lugar a dudas', 'en conclusión podemos afirmar', 'a lo largo de este trabajo', 'en conclusión'. Si las detectas, cámbialas por algo más natural.\n"
     "6. No sobreexpliques. Si algo es obvio en contexto, confía en que el lector lo entiende.\n"
     "7. Usa vocabulario apropiado para el nivel universitario, pero sin palabras rebuscadas que nadie usaría al hablar.\n"
-    "8. Mantén la precisión técnica y académica del contenido — no sacrifiques exactitud por sonar humano.\n"
-    "9. Evita el uso de listas (viñetas/bullet points o listas numeradas) cuando redactes explicaciones, investigaciones o ensayos. Los humanos normalmente estructuran sus explicaciones usando párrafos fluidos y conectados. Usa listas únicamente si la asignación las pide de forma explícita o para enumerar elementos técnicos muy específicos (como pasos de un algoritmo o ejemplos de código).\n"
-    "10. PROFUNDIDAD Y EXTENSIÓN ACADÉMICA: Cuando se trate de tareas teóricas, investigaciones o ensayos. No te limites a resúmenes o respuestas de un solo párrafo. Desarrolla cada concepto explicando su trasfondo, la teoría en la que se apoya, comparaciones de ventajas y desventajas, ejemplos prácticos en la industria y perspectivas a futuro. El entregable final debe tener una extensión robusta equivalente a un reporte completo para (investigaciones teóricas).\n"
-    "11. ANÁLISIS MULTIMODAL DE ESQUEMAS Y CIRCUITOS: Cuando existan imágenes adjuntas con esquemas o diagramas técnicos, debes analizar minuciosamente los valores visibles de los componentes (resistencias, capacitores, fuentes, diodos, transistores, voltajes) y usarlos directamente en los cálculos y respuestas sin asumir valores ficticios."
+    "8. Evita el uso de listas (viñetas/bullet points o listas numeradas) cuando redactes explicaciones, investigaciones o ensayos. Los humanos normalmente estructuran sus explicaciones usando párrafos fluidos y conectados. Usa listas únicamente si la asignación las pide de forma explícita o para enumerar elementos técnicos muy específicos (como pasos de un algoritmo o ejemplos de código).\n"
 )
 
 
@@ -46,23 +42,16 @@ def build_default_prompt_buffer(item):
     Builds the pre-filled prompt buffer for nvim editing.
     Includes the default system instruction (persona/rules) and task prompt.
     """
-    title = item.get("title", "Sin Título")
+    # title = item.get("title", "Sin Título")
     description = item.get("description", "").strip()
-    course_code = item.get("course_code", "")
-    course_name = item.get("course_name", "")
-    due_date = item.get("due_date", "Sin fecha límite")
-    course_display = f"{course_code} {course_name}".strip() or "Unknown Course"
+    # course_code = item.get("course_code", "")
+    # course_name = item.get("course_name", "")
+    # due_date = item.get("due_date", "Sin fecha límite")
+    # course_display = f"{course_code} {course_name}".strip() or "Unknown Course"
 
     default_prompt = (
         f"Desarrolla el entregable universitario basándote exactamente en las instrucciones de la asignación. "
-        f"Para cada punto o pregunta solicitada en las instrucciones de Moodle, no te limites a una definición simple; "
-        f"desarrolla explicaciones amplias de al menos 2 o 3 párrafos completos por punto, analizando sus fundamentos, "
-        f"ejemplos de aplicación práctica y consideraciones técnicas. El objetivo es producir un reporte formal.\n\n"
-        f"Contexto del Entregable:\n"
-        f"- Asignatura: {course_display}\n"
-        f"- Fecha de Vencimiento: {due_date}\n\n"
-        f"Título: {title}\n\n"
-        f"Instrucciones de Moodle:\n{description}"
+        f"Instrucciones:\n{description}"
     )
 
     return (
