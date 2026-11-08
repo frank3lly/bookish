@@ -369,6 +369,25 @@ def preprocess_markdown(md_content):
         clean_lines.append(line)
         
     content_no_moodle = "\n".join(clean_lines)
+
+    # Process extended markdown image syntax: ![Caption|classes](path)
+    def _format_markdown_image(m):
+        full_alt = m.group(1).strip()
+        raw_src = m.group(2).strip()
+
+        if "|" in full_alt:
+            parts = [p.strip() for p in full_alt.split("|")]
+            caption = parts[0]
+            classes = " ".join([p for p in parts[1:] if p])
+        else:
+            caption = full_alt
+            classes = "center"
+
+        caption_tag = f"<figcaption>{caption}</figcaption>" if caption else ""
+        class_attr = f' class="{classes}"' if classes else ""
+        return f'<figure{class_attr}><img src="{raw_src}"{class_attr} alt="{caption}" />{caption_tag}</figure>'
+
+    content_no_moodle = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _format_markdown_image, content_no_moodle)
     
     # Remove any <div class="page-break"></div> that directly follows </div> of the cover page
     content_no_moodle = re.sub(

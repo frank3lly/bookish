@@ -119,6 +119,31 @@ def build_cover_page_html(
 _image_cache: dict[str, str] = {}
 
 
+def normalize_image_path(src: str) -> str:
+    """
+    Normalizes an image path:
+    - Strips surrounding single or double quotes.
+    - Replaces backslashes with forward slashes.
+    - Translates Windows drive letter paths (e.g. C:\\... or C:/...) to /mnt/<drive>/... if on Linux/WSL.
+    """
+    if not src or src.startswith(("data:", "http://", "https://")):
+        return src
+
+    src = src.strip().strip("'\"")
+    src = src.replace("\\", "/")
+
+    # Check for Windows drive letter like C:/ or D:/
+    m = re.match(r"^([a-zA-Z]):/(.*)", src)
+    if m:
+        drive_letter = m.group(1).lower()
+        rest = m.group(2)
+        wsl_mount = f"/mnt/{drive_letter}"
+        if os.path.exists(wsl_mount) or sys.platform.startswith("linux"):
+            src = f"{wsl_mount}/{rest}"
+
+    return src
+
+
 def image_data_uri(src: str, base_dir: str | None = None) -> str:
     """
     Resolve an image path and return a base64 data URI.
@@ -127,6 +152,8 @@ def image_data_uri(src: str, base_dir: str | None = None) -> str:
     """
     if not src or src.startswith(("data:", "http://", "https://")):
         return src
+
+    src = normalize_image_path(src)
 
     # Build a cache key
     cache_key = f"{base_dir or ''}::{src}"
