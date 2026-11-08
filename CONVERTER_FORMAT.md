@@ -1,123 +1,150 @@
-# Rules & Formatting Specification for Bookish PDF Converter
+# Markdown to PDF Converter — Formatting & Feature Specification
 
-This document defines the exact formatting and structural rules for Markdown (`.md`) files to be converted into clean, professional academic PDFs using `bookish_pkg.converter`. Pass this guide to AI models (ChatGPT, Claude, Gemini) when requesting homework drafts or reports.
+This specification defines the formatting rules, extended syntax, and utility classes supported by the Markdown-to-PDF converter engine. Any LLM or autonomous agent producing Markdown documents for PDF compilation should follow these guidelines.
 
 ---
 
-## 1. Academic Cover Page (Presentation Sheet)
+## 1. Document Structure & Typography
 
-Every document must start with the cover page HTML block at the very top. Do **not** place any Markdown text before this block.
+- **Headings**: Use standard ATX headings (`#`, `##`, `###`, `####`). Headings automatically enforce `page-break-after: avoid` to prevent orphan titles at page bottoms.
+- **Paragraphs**: Standard text paragraphs are rendered with justified alignment (`text-align: justify`) and proportional line height.
+- **Lists**: Ordered and unordered lists (`-`, `*`, `1.`) are indented with compact spacing.
+- **Blockquotes**: Markdown `>` blockquotes are formatted in italic with an indented margin.
 
+---
+
+## 2. Image Placement, Sizing & Alignment
+
+The converter provides extended Markdown image syntax as well as direct HTML support.
+
+### Extended Markdown Syntax
+```markdown
+![Caption Text|class1|class2](path/to/image.png)
+```
+The text preceding the first pipe (`|`) becomes the figure caption (`<figcaption>`). The tokens following the pipes are applied as CSS classes to both the `<figure>` container and the `<img>` element.
+
+#### Examples:
+- Centered image at 50% page width with caption:
+  ```markdown
+  ![Circuit Diagram|center|w-50](diagram.png)
+  ```
+- Centered screenshot with subtle academic border:
+  ```markdown
+  ![Execution Evidence|center|screenshot](terminal.png)
+  ```
+- Floating image on the right at 25% width:
+  ```markdown
+  ![Icon|right|w-25](icon.png)
+  ```
+- Image with no caption:
+  ```markdown
+  ![|center|w-75](chart.png)
+  ```
+
+### Utility Classes Reference
+
+| Category | Class | Description |
+|---|---|---|
+| **Alignment** | `center`, `img-center` | Centers element in block mode (`margin-left: auto; margin-right: auto`) |
+| **Alignment** | `left` | Floats element to the left with right margin |
+| **Alignment** | `right` | Floats element to the right with left margin |
+| **Width** | `w-25` | Sets element width to 25% of printable area |
+| **Width** | `w-50` | Sets element width to 50% of printable area |
+| **Width** | `w-75` | Sets element width to 75% of printable area |
+| **Width** | `w-100` | Sets element width to 100% of printable area |
+| **Max Height** | `small` | Caps height at 2.2 inches (compact diagrams, signatures) |
+| **Max Height** | `medium` | Caps height at 4.0 inches (standard charts and schematics) |
+| **Max Height** | `large` | Caps height at 6.5 inches (full-page vertical diagrams) |
+| **Style** | `screenshot` | Adds subtle border (`#cccccc`), margin, and centers image |
+
+---
+
+## 3. Advanced HTML Elements
+
+### Explicit Figures with Captions
 ```html
-<div class="cover-page">
-  <img src="logo.jpeg" alt="Universidad Central del Este" class="cover-logo" />
-  <h2>Facultad de Ciencias e Ingenierías</h2>
-  <h3>Escuela de Ingeniería de Software</h3>
+<figure class="center w-50">
+  <img src="schematic.png" class="center w-50" alt="Circuit Schematic" />
+  <figcaption>Figure 1: Operational amplifier closed-loop schematic</figcaption>
+</figure>
+```
 
-  <p><strong>Asignatura:</strong> [CÓDIGO DE ASIGNATURA]</p>
-  <p><strong>Asignación:</strong> [TÍTULO DE LA TAREA]</p>
-  <p><strong>Estudiante:</strong> [NOMBRE DEL ESTUDIANTE]</p>
-  <p><strong>Matrícula:</strong> [MATRÍCULA]</p>
-  <p><strong>Fecha Límite:</strong> [FECHA DE ENTREGA]</p>
+### Side-by-Side Image Grids (`image-grid-2`)
+To display two images or figures side-by-side (e.g. theoretical vs. experimental comparison):
+```html
+<div class="image-grid-2">
+  <figure>
+    <img src="simulation.png" alt="Simulation" />
+    <figcaption>Simulation Response</figcaption>
+  </figure>
+  <figure>
+    <img src="measurement.png" alt="Oscilloscope Measurement" />
+    <figcaption>Physical Measurement</figcaption>
+  </figure>
 </div>
 ```
 
-- **Note on Logo**: `<img src="logo.jpeg" ... />` is automatically replaced with the encoded institutional logo during PDF compilation.
-- **Page Break**: The `.cover-page` container automatically forces a clean page break after it.
+---
+
+## 4. Path Resolution & Windows WSL Normalization
+
+The converter automatically resolves local image paths and embeds them as Base64 Data URIs:
+1. Relative path from the Markdown file's directory.
+2. Absolute filesystem paths (Linux / Unix).
+3. **Automatic Windows to WSL Path Normalization**:
+   Windows paths (e.g., `C:\Users\username\Pictures\photo.png` or `C:/...`) pasted into Markdown in a WSL environment are automatically translated to `/mnt/c/Users/username/Pictures/photo.png`.
+   Accidental quotes surrounding file paths are stripped automatically.
 
 ---
 
-## 2. Body Text & Typography Rules
+## 5. Page Break Control
 
-1. **Academic Tone & Paragraph Flow**:
-   - Write in a natural, mature university student voice.
-   - Use fluid paragraphs (2–4 paragraphs per section).
-   - Avoid generic AI summary phrases like *"En resumen"*, *"Es importante destacar"*, *"Sin lugar a dudas"*, or *"En conclusión"*.
-
-2. **Heading Hierarchy**:
-   - Primary section headings: `### Heading Title` or `## Heading Title`.
-   - Subsection titles: `#### Subsection Title`.
-
-3. **No Excessive Lists**:
-   - Explain concepts using cohesive narrative paragraphs instead of bullet points, unless explicitly requested by the assignment instructions.
-
----
-
-## 3. Images, Screenshots & Evidence
-
-Images can be inserted using standard Markdown or HTML `<img>` tags.
-
-### Supported Syntax:
-- **HTML Tag** (Recommended for screenshots):
+For clean pagination across multi-page documents:
+- Force break after an element:
   ```html
-  <img src="captura_registro_empleados.png" alt="Descripción de la captura" class="screenshot" />
+  <div class="page-break"></div>
   ```
-- **Markdown Image Syntax**:
-  ```markdown
-  ![Descripción de la imagen](captura_registro_empleados.png)
+- Force break before an element via CSS class:
+  ```html
+  <h2 class="page-break-before">Section Title</h2>
   ```
-
-### Image Path Resolution:
-The converter automatically resolves and embeds images into Base64 Data URIs from:
-1. Relative path to the `.md` file's location.
-2. Direct or absolute system path.
-3. Fallback repository directory: `data/images/<filename>`.
-
-Adding `class="screenshot"` applies a clean border and centers the screenshot within page margins.
+- Force break after an element via CSS class:
+  ```html
+  <div class="page-break-after">Content</div>
+  ```
 
 ---
 
-## 4. Code Blocks & Formatting
+## 6. Code Blocks & Data Tables
 
-All code snippets must use fenced code blocks with language identifiers:
-
+### Code Blocks
+Fenced code blocks with language identifiers render with syntax formatting, subtle background, and `page-break-inside: avoid`:
 ````markdown
-```csharp
-public class Empleado : Cliente
-{
-    private string cargo;
-    private decimal salario;
-
-    public Empleado(string codigo, string nombre, string cargo, decimal salario)
-        : base(codigo, nombre)
-    {
-        this.cargo = cargo;
-        this.salario = salario;
-    }
-}
+```python
+def calculate_gain(r_f: float, r_in: float) -> float:
+    return 1.0 + (r_f / r_in)
 ```
 ````
 
-- Inline code should use single backticks: `` `private` ``, `` `protected` ``.
-
----
-
-## 5. Data Tables & Specifications
-
-Data tables must use standard Markdown table syntax:
-
+### Tables
+Standard GitHub Flavored Markdown tables are rendered with clear borders, bold headers, and page break prevention:
 ```markdown
-| Modificador | Campo | Propósito |
-|---|---|---|
-| `protected` | `codigo`, `nombre` | Heredados por la clase derivada `Empleado`. |
-| `private` | `salario` | Dato sensible restringido a la propia clase. |
+| Parameter | Theoretical | Measured | Error (%) |
+|---|---|---|---|
+| Voltage Out | 5.00 V | 4.95 V | 1.0% |
+| Current In  | 2.50 mA | 2.52 mA | 0.8% |
 ```
 
 ---
 
-## 6. Execution & Usage Commands
+## 7. Converter CLI Invocation
 
-### Batch conversion (default directory `data/drafts/` -> configured output directory):
-```bash
-python3 -m bookish_pkg.converter
-```
+- **Convert a single file**:
+  ```bash
+  python3 -m bookish_pkg.converter path/to/document.md [output/destination.pdf]
+  ```
 
-### Convert a specific directory of Markdown files:
-```bash
-python3 -m bookish_pkg.converter /ruta/a/la/carpeta/ [ruta/de/salida/]
-```
-
-### Convert a single Markdown file:
-```bash
-python3 -m bookish_pkg.converter /ruta/a/mi_tarea.md [/ruta/de/salida/mi_tarea.pdf]
-```
+- **Convert a directory of Markdown files**:
+  ```bash
+  python3 -m bookish_pkg.converter path/to/directory/ [output/directory/]
+  ```

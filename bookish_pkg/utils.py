@@ -6,6 +6,7 @@ cover page HTML builder, image inlining) into a single module.
 """
 
 import os
+import sys
 import re
 import logging
 import shutil
