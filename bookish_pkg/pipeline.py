@@ -257,6 +257,13 @@ def create_handoff_file(item):
     additional_section = ""
     if additional_info:
         additional_section = f"## Contexto / Instrucciones Adicionales del Estudiante\n\n{additional_info}\n\n---\n\n"
+    images_section = ""
+    attached_images = item.get("attached_images", [])
+    if attached_images:
+        images_section = "## Esquemas y Diagramas Extraídos\n\n"
+        for img in attached_images:
+            images_section += f"- `{os.path.abspath(img)}`\n"
+        images_section += "\n---\n\n"
     handoff_content = (
         f"# Contexto de Asignación — Handoff para Agente IA\n\n"
         f"> [!TIP]\n"
@@ -281,6 +288,7 @@ def create_handoff_file(item):
         f"## Instrucciones de Moodle\n\n"
         f"{description}\n\n"
         f"---\n\n"
+        f"{images_section}"
         f"{additional_section}"
         f"## Instrucciones para el Agente\n\n"
         f"[Escribe o modifica aquí lo que quieres que haga el agente.]\n\n"
@@ -914,7 +922,8 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
                             draft_content = generate_assignment_draft(
                                 client, title, description, course_code, course_name, due_date,
                                 additional_info="",
-                                custom_prompt=additional_info
+                                custom_prompt=additional_info,
+                                image_paths=item.get("attached_images", [])
                             )
                             header = build_cover_page_html(
                                 course_code=course_code,

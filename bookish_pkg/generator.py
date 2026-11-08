@@ -32,7 +32,8 @@ DEFAULT_SYSTEM_INSTRUCTION = (
     "7. Usa vocabulario apropiado para el nivel universitario, pero sin palabras rebuscadas que nadie usaría al hablar.\n"
     "8. Mantén la precisión técnica y académica del contenido — no sacrifiques exactitud por sonar humano.\n"
     "9. Evita el uso de listas (viñetas/bullet points o listas numeradas) cuando redactes explicaciones, investigaciones o ensayos. Los humanos normalmente estructuran sus explicaciones usando párrafos fluidos y conectados. Usa listas únicamente si la asignación las pide de forma explícita o para enumerar elementos técnicos muy específicos (como pasos de un algoritmo o ejemplos de código).\n"
-    "10. PROFUNDIDAD Y EXTENSIÓN ACADÉMICA: Cuando se trate de tareas teóricas, investigaciones o ensayos. No te limites a resúmenes o respuestas de un solo párrafo. Desarrolla cada concepto explicando su trasfondo, la teoría en la que se apoya, comparaciones de ventajas y desventajas, ejemplos prácticos en la industria y perspectivas a futuro. El entregable final debe tener una extensión robusta equivalente a un reporte completo para (investigaciones teóricas)."
+    "10. PROFUNDIDAD Y EXTENSIÓN ACADÉMICA: Cuando se trate de tareas teóricas, investigaciones o ensayos. No te limites a resúmenes o respuestas de un solo párrafo. Desarrolla cada concepto explicando su trasfondo, la teoría en la que se apoya, comparaciones de ventajas y desventajas, ejemplos prácticos en la industria y perspectivas a futuro. El entregable final debe tener una extensión robusta equivalente a un reporte completo para (investigaciones teóricas).\n"
+    "11. ANÁLISIS MULTIMODAL DE ESQUEMAS Y CIRCUITOS: Cuando existan imágenes adjuntas con esquemas o diagramas técnicos, debes analizar minuciosamente los valores visibles de los componentes (resistencias, capacitores, fuentes, diodos, transistores, voltajes) y usarlos directamente en los cálculos y respuestas sin asumir valores ficticios."
 )
 
 
@@ -161,7 +162,7 @@ def open_prompt_editor(stdscr, item):
 open_external_editor = lambda stdscr, title: open_prompt_editor(stdscr, {"title": title})
 
 
-def generate_assignment_draft(client, title, description, course_code, course_name, due_date, additional_info="", custom_prompt=None):
+def generate_assignment_draft(client, title, description, course_code, course_name, due_date, additional_info="", custom_prompt=None, image_paths: list[str] = None):
     from google import genai
     from google.genai import types
 
@@ -184,13 +185,35 @@ def generate_assignment_draft(client, title, description, course_code, course_na
         if additional_info:
             prompt += f"\n\nInstrucciones/Detalles Adicionales del Estudiante (CRÍTICO):\n{additional_info}"
 
+    contents = [prompt]
+    if image_paths:
+        for img_path in image_paths:
+            if img_path and os.path.exists(img_path) and os.path.isfile(img_path):
+                ext = os.path.splitext(img_path)[1].lower()
+                mime_map = {
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".webp": "image/webp",
+                    ".gif": "image/gif",
+                }
+                mime_type = mime_map.get(ext, "image/png")
+                try:
+                    with open(img_path, "rb") as img_f:
+                        img_bytes = img_f.read()
+                    if img_bytes:
+                        part = types.Part.from_bytes(data=img_bytes, mime_type=mime_type)
+                        contents.append(part)
+                except Exception as img_err:
+                    log.warning(f"Error reading image '{img_path}' for multimodal prompt: {img_err}")
+
     max_retries = 3
     base_delay = 2
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
                 model=DEFAULT_GEMINI_MODEL,
-                contents=prompt,
+                contents=contents,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
                     temperature=0.7,
