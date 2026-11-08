@@ -13,7 +13,7 @@ from bookish_pkg.config import (
     HANDOFF_DIR, CONVERTER_FORMAT_FILE, ASSIGNMENTS_FILE, PROJECT_ROOT,
     STUDENT_NAME, STUDENT_ENROLMENT, STATE_FILE,
 )
-from bookish_pkg.utils import sanitize_filename, build_cover_page_html, copy_to_clipboard, is_assignment_overdue
+from bookish_pkg.utils import sanitize_filename, build_cover_page_html, copy_to_clipboard, is_assignment_overdue, open_draft_in_editor
 from bookish_pkg.scraper import login_and_save_session, load_session_and_scrape, upload_assignment_submission
 from bookish_pkg.generator import curses_prompt_assignment, generate_assignment_draft
 from bookish_pkg.converter import convert_md_to_pdf, render_presentation_png
@@ -926,14 +926,22 @@ def run_bookish_pipeline(stdscr, force_refresh: bool = False):
                             with open(output_file, "w", encoding="utf-8") as f:
                                 f.write(header + "\n\n" + draft_content)
                             logger.log(f"Guardado borrador Markdown: {os.path.basename(output_file)}", "success")
-                            session_generated_mds.append(output_file)
+
+                            logger.log(f"Abriendo borrador en Neovim para revisión...", "step")
+                            edit_ok = open_draft_in_editor(output_file)
+                            try:
+                                stdscr.clear()
+                                stdscr.refresh()
+                            except Exception:
+                                pass
+
+                            if edit_ok:
+                                session_generated_mds.append(output_file)
+                                logger.log(f"Borrador aprobado para compilación PDF: {os.path.basename(output_file)}", "success")
+                            else:
+                                logger.log(f"Edición abortada (:cq) para '{title}'. Se omite la conversión a PDF, conservando el borrador en disco.", "warn")
                         except Exception as e:
                             logger.log(f"Error al generar borrador para '{title}': {e}", "error")
-                except ImportError:
-                    logger.log("Error: google-genai no está instalado.", "error")
-                    time.sleep(2)
-                except Exception as e:
-                    logger.log(f"Error inicializando cliente Gemini: {e}", "error")
                 except ImportError:
                     logger.log("Error: google-genai no está instalado.", "error")
                     time.sleep(2)

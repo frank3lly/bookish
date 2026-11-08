@@ -53,6 +53,36 @@ def open_file_async(file_path: str) -> None:
     log.debug("No file viewer found for %s", file_path)
 
 
+def open_draft_in_editor(file_path: str) -> bool:
+    """
+    Opens the generated Markdown draft in Neovim (or $EDITOR / vim) for manual review.
+    Pauses curses before opening, restores afterwards.
+    Returns True if the editor exited with code 0 (:x or :wq).
+    Returns False if aborted (:cq or error).
+    """
+    try:
+        import curses
+        curses.endwin()
+    except Exception:
+        pass
+
+    editor = "nvim" if shutil.which("nvim") else (os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vim")
+    try:
+        proc = subprocess.run([editor, file_path])
+        return proc.returncode == 0
+    except FileNotFoundError:
+        editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vim"
+        try:
+            proc = subprocess.run([editor, file_path])
+            return proc.returncode == 0
+        except Exception as e:
+            log.error(f"Error executing editor fallback '{editor}': {e}")
+            return False
+    except Exception as e:
+        log.error(f"Error opening editor '{editor}': {e}")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Cover page HTML builder (was duplicated in converter and pipeline)
 # ---------------------------------------------------------------------------
