@@ -426,9 +426,26 @@ def safe_goto(page, url, retries=2):
                 raise RuntimeError(f"Failed to navigate to {url} after {retries} retries: {e}") from e
 
 
+def is_session_expired_url(url: str) -> bool:
+    """
+    Checks if a URL indicates an unauthenticated redirect (native Moodle login,
+    Microsoft OIDC SSO, or any external auth gate).
+    """
+    if not url:
+        return True
+    u = url.lower()
+    return (
+        "login/index.php" in u
+        or "login.microsoftonline.com" in u
+        or "auth/oidc" in u
+        or ("login" in u and "moodle.uce.edu.do" not in u)
+    )
+
+
 def login_and_save_session(username: str, password: str):
     """
     Handles logging in to Moodle programmatically.
+    Supports both Microsoft 365 OIDC Single Sign-On and Moodle native login.
     Dismisses any popups/modals before interacting with the login form.
     """
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
@@ -443,20 +460,40 @@ def login_and_save_session(username: str, password: str):
 
                 safe_goto(page, LOGIN_URL)
 
-                page.fill("input#username", username)
-                page.fill("input#password", password)
-                page.click("#loginbtn")
+                if "login.microsoftonline.com" in page.url.lower():
+                    # Microsoft 365 OIDC SSO Flow
+                    page.fill('input[type="email"], input[name="loginfmt"]', username)
+                    page.click('input[type="submit"], button[type="submit"], #idSIButton9')
+                    page.wait_for_selector('input[type="password"], input[name="passwd"]', timeout=15000)
+                    page.fill('input[type="password"], input[name="passwd"]', password)
+                    page.click('input[type="submit"], button[type="submit"], #idSIButton9')
 
-                try:
-                    page.wait_for_url(lambda url: "login/index.php" not in url, timeout=15000)
-                except PlaywrightTimeoutError:
-                    dismiss_overlays(page)
-                    error_locator = page.locator(".alert-danger, .loginerrors, #loginerrormessage")
-                    if error_locator.count() > 0:
-                        err_text = error_locator.first.inner_text().strip()
-                        raise RuntimeError(f"Login failed: {err_text}")
-                    else:
-                        raise RuntimeError("Login timed out. Check your credentials or network.")
+                    # Handle 'Stay signed in?' prompt if it appears
+                    try:
+                        page.wait_for_selector('#idSIButton9, input[value="Yes"], input[value="Sí"]', timeout=4000)
+                        page.click('#idSIButton9, input[value="Yes"], input[value="Sí"]')
+                    except Exception:
+                        pass
+
+                    page.wait_for_load_state("networkidle", timeout=30000)
+                    if is_session_expired_url(page.url):
+                        raise RuntimeError(f"Login failed at Microsoft SSO: {page.url}")
+                else:
+                    # Native Moodle login form
+                    page.fill("input#username", username)
+                    page.fill("input#password", password)
+                    page.click("#loginbtn")
+
+                    try:
+                        page.wait_for_url(lambda url: "login/index.php" not in url, timeout=15000)
+                    except PlaywrightTimeoutError:
+                        dismiss_overlays(page)
+                        error_locator = page.locator(".alert-danger, .loginerrors, #loginerrormessage")
+                        if error_locator.count() > 0:
+                            err_text = error_locator.first.inner_text().strip()
+                            raise RuntimeError(f"Login failed: {err_text}")
+                        else:
+                            raise RuntimeError("Login timed out. Check your credentials or network.")
 
                 dismiss_overlays(page)
 
@@ -752,7 +789,7 @@ def upload_assignment_submission(assignment_url: str, file_path: str) -> tuple[b
 
                 safe_goto(page, assignment_url)
 
-                if "login/index.php" in page.url:
+                if is_session_expired_url(page.url):
                     return False, "La sesión de Moodle ha expirado. Por favor re-autentica."
 
                 page_text = page.locator("body").inner_text().lower()
@@ -861,7 +898,7 @@ def load_session_and_scrape(force_refresh: bool = False):
 
                 safe_goto(page, CALENDAR_URL)
 
-                if "login/index.php" in page.url:
+                if is_session_expired_url(page.url):
                     raise RuntimeError("Session has expired! Please run the login command again.")
 
                 assignment_links = page.locator('a[href*="mod/assign/view.php?id="]').all()
